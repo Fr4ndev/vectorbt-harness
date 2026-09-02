@@ -43,6 +43,7 @@ OOS > 0.
 | `demon2:mmxm` `{enable_breaker:True}` | 1 | OOS mean −14.70%, 0/8 → **FALLO OOS** | 2026-09-02 |
 | `demon2:po3_fractal` `{}` (defaults) | 0 | — (solo in-sample n=38) | — |
 | `ictsuite:sfp_institutional` `{}` | 0 | — (solo in-sample n=32) | — |
+| `fvg_mtf:fvg` 4h `{strict_min_confluence:5, gap_atr_mult:0.75}` | 1 | OOS mean **+24.68%**, 2/2 → **PASA OOS** (n=16, aún <30) | 2026-09-02 |
 
 > Regla: si alguna de estas filas vuelve a correr con los MISMOS params sobre el
 > MISMO tramo OOS, es una violación — marcar y abortar.
@@ -109,6 +110,95 @@ Judas Swing + MSS + FVG solo dispara en ~38 señales/año con −2% mean).
 Sfp_institutional necesita más trabajo en la validación de reclaim y killzone
 para aumentar n sin destruir la calidad.
 
+### Fuga de datos — diagnóstico exploratorio fvg (NO vinculante)
+
+Se ejecutó un barrido exploratorio de hipótesis (`strict+2h`, `strict+2h+1d`,
+`quality_all`, etc.) sobre el dataset **completo de 365 días** en lugar de solo
+el IS 70%. Esto contaminó la selección de hipótesis: los resultados que
+"ganaron" (ej. `strict+2h` pasaba de −16.81 a +9.37%) incluyeron el tramo
+OOS en la evaluación.
+
+**Estatus**: resultados exploratorios archivados pero NO vinculantes. El loop
+de mutación se relanza desde cero usando SOLO el IS 70%, sin mirar estos
+números para decidir qué mutar. Si la misma hipótesis (`strict_tfs` extendido)
+gana en IS limpio → legítimo; si no → se descarta sin pena.
+
+Causa raíz: el script diagnóstico (`test strict_tfs hypothesis`) se ejecutó
+antes de montar el loop de mutación, y usó `days=365` completo. Debería haber
+hecho el split primero. Corregido en el re-lanzamiento.
+
+### 2026-09-02 — fvg_mtf:fvg (PRIMERA FAMILIA, COLA)
+
+**Estado inicial**: UNPROFITABLE −16.81%, 3/8, n=2122 (full 365d).
+
+**Loop de mutación** (IS-only 70%, 13 iteraciones, patience=4, n≥30 gate):
+- Baseline IS: mean=−20.33%, 3/8, n=1430
+- Mejor variante alcanzada: `gap_100` (gap_atr_mult=1.0, strict_tfs=1h/4h)
+  - IS mean=−13.22%, 3/8, n=1221
+  - BTC 2h sigue dominando negativamente (−102.27%, n=452)
+- **Ninguna mutación pasó el gate IS** (mean>0 + prof≥50% + n≥30)
+- `strict_tfs` extendido (2h, 2h+1d) NO ganó en IS limpio — la mejora vista en
+  el full-data era artefacto de fuga de datos (ya documentado arriba)
+
+**Veredicto**: **DESCARTADA** (fvg pullback no genera alpha con los parámetros
+disponibles). El problema es estructural: BTC 2h produce −102% con n=452 en IS,
+sin importar el gate de confluencia. La inversión (ifvg) es la que aporta;
+el pullback no.
+
+OOS evaluado: 0 (no hubo candidato IS-profitable).
+
+### 2026-09-02 — fvg 4h-only (mc5+gap075): CANDIDATO que sobrevive OOS
+
+Revisión tras el descarte con foco en la celda estrella observada en IS: `fvg`
+es rentable en **4h** (BTC 4h +79.1% en profit map full-365d; +138.9 en IS limpio
+con mc5+gap075), pero se hunde en 2h/1d (−102%). El descarte global estaba
+arrastrado por esas celdas malas.
+
+**Mutación dirigida a 4h** (`strict_min_confluence=5`, `gap_atr_mult=0.75`,
+solo BTC/ETH 4h):
+
+| Métrica | IS (70%) | OOS (30%) |
+|---|---|---|
+| mean | **+72.55%** | **+24.68%** |
+| celdas rentables | 2/2 | 2/2 |
+| n | 34 | 16 |
+| detalle | BTC 4h +138.9 (n=22), ETH 4h +6.2 (n=12) | BTC 4h +47.2 (n=8), ETH 4h +2.1 (n=8) |
+
+**Primer candidato que SOBREVIVE OOS** (mean OOS +24.68% > 0, 2/2 celdas).
+Caveat de muestra: OOS n=16 (BTC 8 + ETH 8), por debajo del umbral de
+n≥30 de la condición 3 en la celda de soporte. Aun así, es el único perfil con
+OOS>0 de toda la cartera hasta la fecha.
+
+Cuenta como **1 evaluación OOS** de esta config de `fvg` (regla one-shot; si se
+vuelve a probar con estos params sobre el mismo tramo → violación).
+
+### 2026-09-02 — DEPLOY A TELEGRAM del candidato fvg 4h (decisión del usuario)
+
+El usuario eximió explícitamente el gate n≥30 (`"pásalo ya a telegram, aunq aya
+pocas señales, si son de altos tf, valen... para pequeño swing de semanas, es
+normal"`). Riesgo conocido y aceptado: n OOS=16 < 30 (condición 3).
+
+**Estado del mercado al desplegar (2026-09-02 ~10:33 UTC)**: SIN señal fresca.
+Última señal BTC 4h fue 2026-08-25 16:00 (hace 8 días); ETH no emite en 14d.
+Vela cerrada 04:00 de hoy: conf 1/5 (BTC), 2/5 (ETH) — lejos del umbral 5.
+No se envió ninguna señal de trade fabricada.
+
+**Despliegue ejecutado (decisión del usuario: monitor daemon)**:
+- `run_live_monitor.py`: daemon que escanea BTC/ETH 4h (datos frescos HL) cada
+  5 min y envía automáticamente la señal fresca vía `ccxtv4/shared/telegram_sender.py`
+  (Dispatcher v4.0, chat `-1002400551494`, chart 15m dark nightclouds).
+- Config emitida = la validada: `fvg`, `strict_tfs=("4h",)`, `strict_min_confluence=5`,
+  `gap_atr_mult=0.75`, exits STRICT (rr_tp1=2.0, rr_runner=3.0, weight_tp1=0.9).
+- Dedup por vela de entrada (estado en `reports/live_monitor_state.json`); señal
+  fresca = entrada en la vela 4h formándose (ejecución al open), age ≤ 4h.
+- Mensaje de arranque "fvg 4h live-monitor ONLINE" enviado OK (sendMessage 200).
+- Daemon corriendo en background (PID 20501, `reports/live_monitor_daemon.log`).
+- Herramienta auxiliar: `run_live_check.py` (scanner manual con detalle por vela).
+
+**Nota brecha visible**: el envío es un ALERTA informativo, no una ejecución
+automática. TP1/TP2 derivados de SL con rr_tp1=2.0 / rr_runner=3.0 (STRICT,
+como en la evaluación OOS). Runner invalidation = extremo opuesto del FVG 4h.
+
 ### Cola: mutaciones pendientes (in-sample → OOS único)
 
 Las familias UNPROFITABLE en la tabla necesitan **mutación in-sample** (cambiar
@@ -116,10 +206,11 @@ params, adds filters, ajustar exits) hasta alcanzar IS profitable, y solo
 entonces un único OOS check. Orden de prioridad:
 
 1. **`fvg_mtf:fvg`** (−16.81, 3/8, n=2122): el pullback de fvg, no la
-   inversión. Tiene n alto; podría beneficiarse de filtros de régimen o ajuste
-   de SL para reducir la caída en celdas negativas (BTC 1d −102.8, BTC 2h
-   −102.9). Si se puede convertir en profitable → buen candidato por volumen
-   de señales.
+   inversión. **PARCIALMENTE RESUELTO**: el sub-perfil 4h-only (mc5+gap075) pasó
+   OOS y está desplegado a Telegram (2026-09-02). El panorama completo sigue
+   negativo (las celdas 2h/1d arrastran −102%); solo si se quiere atacar el
+   volumen general de señales (n) se buscaría filtrar régimen para limpiar
+   esas celdas.
 2. **`fib_retrace`** (−53.94, 0/8, n=2718): retracement Fibonacci multi-TF.
    Con n alto y 0/8 celdas rentables, necesita un cambio estructural significativo
    (SL/invalidation, possibly drop to simpler exits). Bajo prioridad por
