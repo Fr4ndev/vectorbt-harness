@@ -637,3 +637,44 @@ promedio, pero el sistema sigue sin un edge uniforme en todas las celdas.
 **Estado**: evaluación completada; **no se modificó** el exit scheme de
 producción de la familia (aún en decisión si adoptar All-In como exit global de
 hvfvg). Artefacto heredado de sizing en split sin tocar.
+
+## 2026-09-02 — HVFVG FULL WALK-FORWARD (OOS 30%) — fire test
+
+Parámetros de señal (ganadores IS) y exits All-In **congelados** (sin re-ajuste
+en OOS) para detectar curve-fitting. OOS = último 30% de cada serie. PF puro por
+celda.
+
+| OOS PF | All-In 1:2 | All-In 1:2.5 |
+|---|---|---|
+| BTC 1h | **0.139** | **0.114** |
+| BTC 2h | 0.973 | 1.085 |
+| BTC 4h | 0.611 | 0.686 |
+| ETH 1h | 0.830 | 1.009 |
+| ETH 2h | **2.930** | **2.645** |
+| ETH 4h | 0.386 | 0.415 |
+| **media OOS** | 0.978 (1/6 >1.0) | 0.992 (3/6 >1.0) |
+
+**Desglose por grupo de temporalidad (OOS):**
+| grupo | All-In 1:2 | All-In 1:2.5 |
+|---|---|---|
+| **1h** (BTC+ETH) | mean 0.485, 0/2 celdas >1.0 | mean 0.561, 1/2 >1.0 |
+| **2h+4h** | mean 1.225, 1/4 >1.0 | mean 1.208, 2/4 >1.0 |
+
+**Lectura del fuego real:**
+- El edge visto en IS (media 1.24 / 1.17) **no se sostiene en OOS** (media ~1.0).
+  Es sobreajuste de muestra pequeña: el 1h se hunde fuerte (BTC 1h PF **0.14**),
+  confirmando el "matiz honesto".
+- Solo **ETH 2h** es genuinamente robusto en OOS (PF 2.9/2.6). BTC 4h (0.61) y
+  ETH 4h (0.39) también caen bajo 1.0.
+- **Veredicto R:R**: el **All-In 1:2.5 retiene algo mejor el PF en datos no
+  vistos** (media 0.992 vs 0.978; 3/6 celdas >1.0 vs 1/6; mantiene ETH 1h ~1.01 y
+  BTC 2h 1.09). Ambos quedan ~breakeven a nivel sistema; ninguno llega a 1.15 en
+  OOS.
+- **Matiz de muestra**: ventanas OOS minúsculas (n=7-21 señales, 7-19 trades) →
+  el PF OOS es ruidoso; los números son orientativos, no concluyentes.
+
+**Decisión (alineada con el prompt #3)**: la temporalidad **1h se hunde <1.0 en
+OOS** → se descarta para HVFVG. Aún así, como el sistema completo OOS es ~breakeven
+y solo 2h/ETH es robusto, **NO se promueve HVFVG a deploy en vivo**; quedan
+registrados los datos para post-procesar el arnés (descartar 1h) si se decide
+seguir. Artefacto heredado de sizing en split sin tocar.
