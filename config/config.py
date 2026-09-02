@@ -63,6 +63,11 @@ REGISTRY: dict[str, dict] = {
         "exit": "split",
         "strategies": ["ifvg", "fvg"],
     },
+    "hvfvg": {
+        "module": "signals.hvfvg.hvfvg",
+        "tf": "4h",
+        "exit": "split",
+    },
 }
 
 # Default exit scheme (from the user's spec)

@@ -39,6 +39,8 @@ RUNS = [
     ("ictsuite", "intraday_quantum", {}, {}),
     ("ictsuite", "macro_swing", {}, {}),
     ("ictsuite", "sfp_institutional", {}, {}),
+    # HVFVG (High-Volume FVG) — user spec, walk-forward 70/30, fees 0.00045 / box 10000
+    ("hvfvg", None, {}, {"fees": 0.00045, "init_cash": 10000.0}),
 ]
 
 CELLS = [f"{sym}:{tf}" for sym in SYMBOLS for tf in TIMEFRAMES]

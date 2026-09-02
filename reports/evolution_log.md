@@ -506,3 +506,33 @@ no hay instancias `run_live_monitor` activas. Confirmación UTC: **2026-09-02
 15:20 UTC**. El daemon estuvo vivo desde 12:41 UTC (arranque) y dejó de monitorear
 al ser eliminado; no siguió mandando señales tras el kill. (El arranque usaba la
 config validada; el kill lo dejó fuera de servicio sin señales no válidas extra.)
+
+## 2026-09-02 — HVFVG port COMPLETO (commit b1e0c64 pending → this commit)
+
+Port terminado de `hvfvg_engine_v2.py` a `signals/hvfvg/hvfvg.py`, cerrando la
+deuda registrada en el commit `b1e0c64` (que quedó pendiente de HVFVG).
+
+**Implementación** (vectorizada, sin lookahead):
+- FVG 3 velas; volumen anómalo sin z-score (`volume > rolling(50).mean()*1.8`,
+  con `.shift(1)` para no contaminar con la vela de desplazamiento).
+- Retest + defensa dentro de `retest_max=12`: absorción (vol > rolling_mean(20)*1.5
+  y body ratio < 0.4) o rechazo (cierre fuera de la zona).
+- Entry = `fvg_low + 0.15*height` (long) / `fvg_high - 0.15*height` (short);
+  SL = extremo FVG ± ATR(14)*0.25; TP nativo tp1/tp2 = ERL swing o fallback
+  entry ± ATR*tp_atr_mult.
+
+**Verificación**:
+- `tests/test_hvfvg.py` **ALL PASS**: envelope, volumen obligatorio, bull/bear
+  detection (SL correcto), no-lookahead por truncation invariance k=1000/1600/2200.
+- `tests/test_functional.py` **ALL PASS** (añadidos 2 checks hvfvg).
+- Walk-forward 70/30 smoke (split): 8 celdas loopean sin error.
+
+**Deploy smoke (n señales) — descargos**: resultados mayoritariamente negativos
+en intraday (BTC 1h retA≈-22%, 2h≈-22%; ETH 1h≈-0.4%, 2h≈+3%); 1d sin señales
+(retest_max=12 inalcanzable en velas diarias). Solo BTC 4h leg A +6.6% y ETH 2h
++3.2% positivos. **NO promocionado a deploy**: el port queda registrado y
+verde a nivel unitario, pero no pasa el umbral de rentabilidad para producción.
+Se deja dokumentado como candidato a tuning (niveles entry/SL, ventana defensa).
+
+**Artefacto documentado (sin tocar)**: `_combined_return`/split puede dar Total
+Return < -100% (colapso de sizing con overlap); no abordado en este turno.

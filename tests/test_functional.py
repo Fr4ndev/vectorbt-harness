@@ -25,6 +25,7 @@ from signals.ictquantum.ictquantum import compute as ictquantum_compute
 from signals.ict4hsweep.ict4hsweep import compute as ict4hsweep_compute
 from signals.ictsuite.ictsuite import compute as ictsuite_compute
 from signals.fvg_mtf.fvg_mtf import compute as fvg_mtf_compute
+from signals.hvfvg.hvfvg import compute as hvfvg_compute
 
 
 def _assert(cond, msg):
@@ -74,6 +75,11 @@ def main():
     r9 = fvg_mtf_compute(df, strategy="fvg")
     _assert(r9["entries"].dtype == bool and "sl" in r9,
             "fvg_mtf fvg computes envelope + sl")
+
+    r10 = hvfvg_compute(df)
+    _assert(set(["entries", "short_entries", "sl", "dir", "tp1", "tp2"]) <= set(r10),
+            "hvfvg computes native envelope + tp1/tp2 levels")
+    _assert(r10["entries"].dtype == bool, "hvfvg entries are boolean")
 
     print("== 3. Portfolio engine (split mode) on real data ==")
     res = runner.run_one(family="demon1", strategy=None, symbol="BTC", tf="1h",
