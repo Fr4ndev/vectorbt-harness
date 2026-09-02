@@ -65,6 +65,14 @@ def main():
     r6 = ictsuite_compute(df, strategy="sfp")
     _assert(r6["entries"].dtype == bool, "ictsuite sfp entries boolean")
 
+    r6b = ictsuite_compute(df, strategy="sfp_institutional")
+    _assert(set(["entries", "short_entries", "depth_long", "reclaim_long"]) <= set(r6b),
+            "ictsuite sfp_institutional fires with depth + reclaim extras")
+
+    r2b = demon2_compute(df, strategy="po3_fractal")
+    _assert(set(["entries", "short_entries", "d_open", "judas_long"]) <= set(r2b),
+            "demon2 po3_fractal returns open anchors + judas swing")
+
     r7 = fib_retrace_compute(df)
     _assert(set(["entries", "short_entries", "sl", "dir"]) <= set(r7),
             "fib_retrace returns the standard envelope")

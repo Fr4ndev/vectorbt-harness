@@ -77,9 +77,25 @@ TF: 1h (bias HTF 4h via z-score Valeyre).
 - SL: `high[−3]` (high de la vela B). TP fuente: riesgo × 2 (RR 1:2).
 - Confluencias: 3; sube a 4 si `risk > ATR_prev × 2` (impulso).
 
-### mmxm — Market Maker Model (4h)
-- Requiere breaker block + FVG. **`enable_breaker=False` por defecto → nunca dispara** (fiel al
-  código original, que tenía los breaker hardcodeados a 0). Actívalo con el detector real si quieres.
+### mmxm — Market Maker Model (bias con SL ATR)
+- Sweep bull/bear que valida un breaker block (`_breaker_block`, `win=6`) + FVG
+  (bias-only; la dirección se ffllea hasta el cierre de la vela de entrada).
+- **`enable_breaker=False` por defecto → sin señales** (fiel al original, que
+  tenía los breaker a 0). En el mapa se corre con `enable_breaker=True`.
+- `atr_sl_mult=1.5`: SL real `close ∓ ATR14×1.5` sobre las barras de señal —
+  necesario para que el verdicto sea honesto (el +100% previo con `sl=NaN` era
+  exposición pasiva). **Profit map: PROFITABLE +38.97 (5/8, n=382)**.
+- Requiere pandas ≥2.3 fix `min_periods=1` en `_breaker_block` para disparar.
+
+### po3_fractal — PO3 fractal (Judas Swing, ancla 00:00 UTC)
+- Sesión fractal diaria anclada a 00:00 UTC (`d_open`): Judas Swing = barrido de
+  `high/low` del día previo a primera hora (ventana `judas_window`).
+- LONG/SHORT: retorno al Open del día (`d_open`) tras MSS (structure break con
+  `min_periods=1`) + FVG formado en 15m/30m (`fvg_window`, gapW ≥ ATR×0.25).
+- SL: extremo del Judas Swing (`judas_low`/`judas_high`), extras `d_open`,
+  `judas_long`/`judas_short`, `mss`, `fvg`.
+- **Profit map: UNPROFITABLE −1.88 pero n=4 totales** (solo BTC 1h/4h y ETH 1h/4h,
+  2h/1d 0) → sin datos suficientes para refutar; a vigilar.
 
 ### ote_tbr — OTE 2.0 + TBR (1h)
 - Displacement: `|close−open| > ATR14 × 2.0`.
@@ -175,6 +191,15 @@ Sweep de 2 velas + gates C1/C2 + OTE-fib SL/TP + score.
 - **SFP_LONG:** `low < prev_low AND close > open AND close > prev_close AND (close−low)/rango × 100 > 50%`.
 - SL: `low/high` de la vela. Nivel: `prev_low/prev_high`.
 
+### sfp_institutional — SFP con profundidad + reclaim + killzone
+- Filtra el SFP clásico: profundidad del barrido `0.15–0.50%` (reject pero sin
+  deslizamiento excesivo), reclaim (cierre sobre el nivel) en ≤2 velas y sesión
+  killzone (London/NY).
+- Extras: `depth_long`/`depth_short` (profundidad), `reclaim_long`/`reclaim_short`
+  (velas hasta reclaim).
+- **Profit map: UNPROFITABLE −1.34 (2/8, n=32)** — sin edge claro aún, pero muy
+  por delante del `sfp` clásico (−58.32) al que sustituye.
+
 ---
 
 ## 7. FIB_RETRACE — `signals/fib_retrace/fib_retrace.py`
@@ -241,15 +266,18 @@ confluencia. Variantes vía `strategy` (se registran como
 
 Sweep BTC+ETH × 1h/2h/4h/1d (1 año) de las familias del alcance del usuario:
 `fib_retrace`, `demon2:mmxm` (con `enable_breaker=True`), `demon2:po3`,
-`demon2:power_flow`, `fvg_mtf:ifvg` / `fvg_mtf:fvg` y las 4 de `ictsuite`.
-Emite `reports/profit_map_<ts>.csv` (por celda) y `reports/verdict_<ts>.csv`
-(veredicto por estrategia: PROFITABLE/UNPROFITABLE según mean_return_pct > 0,
-ratio de celdas rentables ≥ 50% y total de señales).
+`demon2:po3_fractal`, `demon2:power_flow`, `fvg_mtf:ifvg` / `fvg_mtf:fvg`,
+`ictsuite:sfp` / `sfp_institutional`, `ictsuite:scalp_sweep` /
+`intraday_quantum` / `macro_swing`. Emite `reports/profit_map_<ts>.csv` (por
+celda) y `reports/verdict_<ts>.csv` (veredicto por estrategia: `mean_return_pct >
+0`, ratio de celdas rentables ≥ 50% y total de señales).
 
-Veredicto 2026-09-02 (hardening activo): **fvg_mtf:ifvg PROFITABLE +69.73%**
-(7/8 celdas); resto UNPROFITABLE (fib_retrace −53.94, power_flow −46.99 con SL,
-fvg −24.01, po3 −57.42, sfp −58.32) o SIN SEÑALES (mmxm, scalp_sweep,
-intraday_quantum, macro_swing). Detalle en `reports/INFORME_PROFIT_MAP.md`.
+Veredicto 2026-09-02 (run final 100004, hardening + trail + fixes fase 2):
+**fvg_mtf:ifvg PROFITABLE +79.81% (7/8)** y **demon2:mmxm PROFITABLE +38.97%
+(5/8)** (SL ATR real); resto UNPROFITABLE (fib_retrace −53.94, power_flow −46.99
+con SL, po3 −57.42, sfp −58.32, fvg −16.81) o SIN SEÑALES (scalp_sweep,
+intraday_quantum, macro_swing); po3_fractal −1.88 y sfp_institutional −1.34 sin
+edge claro (n=4 y n=32). Detalle en `reports/INFORME_PROFIT_MAP.md`.
 
 ```
 ~/Escritorio/ccxtv2/venv/bin/python run_profit_map.py

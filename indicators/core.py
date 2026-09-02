@@ -241,8 +241,8 @@ def ms_shift(high: pd.Series, low: pd.Series, close: pd.Series, sweep_bull: pd.S
     """After an SSL sweep, a bullish MS shift breaks a recent swing high.
     After a BSL sweep, a bearish MS shift breaks a recent swing low."""
     sw_h, sw_l = swing_highs_lows(high, low)
-    recent_swing_high = high.where(sw_h).rolling(5).max().shift(1)
-    recent_swing_low = low.where(sw_l).rolling(5).min().shift(1)
+    recent_swing_high = high.where(sw_h).rolling(5, min_periods=1).max().shift(1)
+    recent_swing_low = low.where(sw_l).rolling(5, min_periods=1).min().shift(1)
     recent_sweep_bull = sweep_bull.rolling(10).sum().gt(0)
     recent_sweep_bear = sweep_bear.rolling(10).sum().gt(0)
     ms_bull = (close > recent_swing_high) & recent_sweep_bull

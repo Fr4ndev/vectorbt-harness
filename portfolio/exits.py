@@ -33,6 +33,7 @@ def build_brackets(
     rr_tp1: float = 2.0,
     rr_runner: float = 5.0,
     weight_tp1: float = 0.8,
+    trail: pd.Series | None = None,
 ) -> dict:
     """Return dict with the two bracket columns keyed on the entry index.
 
@@ -44,6 +45,9 @@ def build_brackets(
         tp2        : absolute price for the 1:5 runner
         sl_tp1     : SL used on leg A (the 1:2 leg), == user sl
         sl_be      : SL moved to break-even on runner leg
+        trail      : optional per-bar trailing-invalidation level for leg B
+                     (e.g. the opposite 4h-FVG extreme); when present the
+                     runner stop re-anchors to it bar-by-bar.
         has_signal : bool mask where a trade is defined
     """
     risk = risk_from_sl(entry, sl, direction)
@@ -71,6 +75,7 @@ def build_brackets(
         "tp2": pd.Series(tp2, index=entry.index),
         "sl_tp1": sl_tp1,
         "sl_be": pd.Series(sl_be, index=entry.index),
+        "trail": trail,
         "weight_tp1": weight_tp1,
         "rr_tp1": rr_tp1,
         "rr_runner": rr_runner,

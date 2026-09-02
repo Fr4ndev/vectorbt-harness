@@ -62,6 +62,8 @@ def run_one(
     # Strategy-native TP levels (sig["tp1"]/["tp2"]) take precedence over the
     # generic 1:2 / 1:5 derivation (e.g. fib_retrace wires Natives).
     direction = sig["dir"]
+    _trail = sig.get("runner_inv")
+    trail_arg = _trail if (_trail is not None and _trail.notna().any()) else None
     if sig.get("tp1") is not None or sig.get("tp2") is not None:
         brackets = exits.build_native_brackets(
             entry=close, sl=sl,
@@ -78,6 +80,7 @@ def run_one(
             rr_tp1=exit_kwargs.get("rr_tp1", cfg.EXIT_DEFAULTS["rr_tp1"]),
             rr_runner=exit_kwargs.get("rr_runner", cfg.EXIT_DEFAULTS["rr_runner"]),
             weight_tp1=exit_kwargs.get("weight_tp1", cfg.EXIT_DEFAULTS["weight_tp1"]),
+            trail=trail_arg,
         )
 
     f = dict(cfg.EXIT_DEFAULTS)

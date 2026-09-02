@@ -9,6 +9,8 @@ functions:
     intraday_quantum — SMT + displacement + MSS scored confluence (>=2.5)
     macro_swing      — weekly-z extreme + daily MSB + 4H sweep, RR 1:5
     sfp              — swing failure pattern (rejection > 50%), long/short
+    sfp_institutional — absorption SFP: sweep depth 0.15-0.50%, strict reclaim
+                        <=2 bars, London/NY killzone gate
 
 Each returns the standard dict (entries / short_entries / sl / dir + extras).
 """
@@ -99,8 +101,8 @@ def intraday_quantum(df, btc_df=None, eth_df=None,
 
     # MSS vs a recent swing, using smt as sweep-direction proxy
     sw_h, sw_l = ic.swing_highs_lows(high, low)
-    recent_h = high.where(sw_h).rolling(max(ms_shift_scan // 2, 3)).max().shift(1)
-    recent_l = low.where(sw_l).rolling(max(ms_shift_scan // 2, 3)).min().shift(1)
+    recent_h = high.where(sw_h).rolling(max(ms_shift_scan // 2, 3), min_periods=1).max().shift(1)
+    recent_l = low.where(sw_l).rolling(max(ms_shift_scan // 2, 3), min_periods=1).min().shift(1)
     ms_bull = (close > recent_h) & (smt == 1)
     ms_bear = (close < recent_l) & (smt == -1)
     score += ((ms_bull | ms_bear)) * 1.0
@@ -220,6 +222,74 @@ def sfp(df, rejection_min: float = 50.0) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# 5. SFP Institutional (depth-filtered swing failure, strict reclaim, killzone)
+# ---------------------------------------------------------------------------
+def sfp_institutional(df, depth_min: float = 0.0015, depth_max: float = 0.0050,
+                      rejection_min: float = 50.0, killzones: bool = True,
+                      reclaim_bars: int = 2) -> dict:
+    """Absorption SFP: sweep a real swing low/high by 0.15-0.50% only.
+
+    Depth filter (the 0.15-0.50% zone) discards both shallow continuation
+    sweeps (<0.15%) and clean structural breaks (>0.50%). Reclaim requires
+    price to close back inside the prior swing range within the activation
+    candle or the next one (<= `reclaim_bars`). Signals are restricted to the
+    London / NY killzones for absorption volume.
+    """
+    close = df["close"]
+    high = df["high"]
+    low = df["low"]
+    open_ = df["open"]
+
+    sw_h, sw_l = ic.swing_highs_lows(high, low)
+    ph = high.where(sw_h).ffill()   # last confirmed swing high
+    pl = low.where(sw_l).ffill()    # last confirmed swing low
+    candle_range = (high - low).replace(0, np.nan)
+
+    # depth of the sweep beyond the swing level (0.15% .. 0.50%)
+    depth_short = ((high - ph) / ph.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)
+    depth_long = ((pl - low) / pl.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan)
+
+    sweep_short = (high > ph) & depth_short.between(depth_min, depth_max)
+    sweep_long = (low < pl) & depth_long.between(depth_min, depth_max)
+
+    # strict reclaim: close back inside the prior swing range <= 2 candles
+    in_prev_range = close.between(pl, ph)
+    reclaim_short = in_prev_range | in_prev_range.shift(1)
+    reclaim_long = in_prev_range | in_prev_range.shift(1)
+
+    # candle rejection quality (wick vs body)
+    rejection_long = (close - low) / candle_range * 100
+    rejection_short = (high - close) / candle_range * 100
+    rq_long = (close > open_) & (rejection_long >= rejection_min)
+    rq_short = (close < open_) & (rejection_short >= rejection_min)
+
+    kz = pd.Series(True, index=df.index)
+    if killzones:
+        kz = ic.is_killzone(ic.session(df.index))
+
+    entries = (sweep_long & reclaim_long & rq_long & kz).fillna(False)
+    shorts = (sweep_short & reclaim_short & rq_short & kz).fillna(False)
+
+    sl = pd.Series(np.nan, index=df.index)
+    sl[entries] = low[entries]     # swept wick low
+    sl[shorts] = high[shorts]      # swept wick high
+
+    direction = pd.Series(0, index=df.index)
+    direction[entries] = 1
+    direction[shorts] = -1
+    return {
+        "entries": entries, "short_entries": shorts, "sl": sl,
+        "dir": direction.astype(int),
+        "depth_long": depth_long.fillna(0),
+        "depth_short": depth_short.fillna(0),
+        "reclaim_long": reclaim_long.fillna(False),
+        "reclaim_short": reclaim_short.fillna(False),
+        "level_long": pl, "level_short": ph,
+        "name": "ictsuite_sfp_institutional",
+    }
+
+
 def compute(df: pd.DataFrame, strategy: str = "scalp_sweep", **params) -> dict:
     """Dispatch to one of the suite strategies."""
     registry = {
@@ -227,6 +297,7 @@ def compute(df: pd.DataFrame, strategy: str = "scalp_sweep", **params) -> dict:
         "intraday_quantum": intraday_quantum,
         "macro_swing": macro_swing,
         "sfp": sfp,
+        "sfp_institutional": sfp_institutional,
     }
     if strategy not in registry:
         raise ValueError(f"Unknown ictsuite strategy '{strategy}'. "

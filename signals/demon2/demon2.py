@@ -151,6 +151,100 @@ def po3(df, dev_fire: float = 35.0, sl_mult: float = 0.3, tp_mult: float = 1.5) 
                     name="demon2_po3")
 
 
+# ---------------------------------------------------------------------------
+# Strategy 2b — PO3 Fractal (AMD anchored to 00:00 UTC Daily/Weekly Open)
+# Fractal PO3, not restricted to daily bars: the accumulation consolidates
+# around the session open, the Judas Swing sweeps the Asian liquidity during
+# the London killzone, and distribution is confirmed by an MSS + FVG.
+# Entry fires when price returns to the Daily Open after the MSS.
+# ---------------------------------------------------------------------------
+def po3_fractal(df, acc_range: float = 0.0030, judas_window: int = 10,
+                ms_lookback: int = 5, fvg_lookback: int = 6,
+                sl_atr: float = 0.2, daily_anchor: bool = True,
+                weekly_anchor: bool = True, require_weekly: bool = False,
+                killzones: bool = True) -> dict:
+    open_ = df["open"]
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
+    idx = df.index
+    hour = idx.hour
+
+    d_open = open_.resample("D").first().reindex(idx, method="ffill")
+    w_open = open_.resample("W-SUN").first().reindex(idx, method="ffill")
+    if not daily_anchor:
+        d_open = w_open
+
+    # ---- Accumulation around the open (00:00-06:00 UTC = Asia) ----
+    acc_mask = (hour >= 0) & (hour < 6)
+    consolidated = acc_mask & (high <= d_open * (1 + acc_range)) & \
+        (low >= d_open * (1 - acc_range))
+    day = idx.normalize()
+    acc_low = low.where(consolidated).groupby(day).transform("min")
+    acc_high = high.where(consolidated).groupby(day).transform("max")
+    tidy = (acc_high - acc_low) <= (acc_range * d_open)
+    acc_low = acc_low.where(tidy)
+    acc_high = acc_high.where(tidy)
+
+    # ---- Judas Swing: London killzone wick sweeps Asian liquidity ----
+    manip = (hour >= 7) & (hour < 10)
+    judas_long = manip & low.lt(acc_low) & low.lt(d_open)
+    judas_short = manip & high.gt(acc_high) & high.gt(d_open)
+    had_judas_long = judas_long.rolling(judas_window, min_periods=1).max().gt(0)
+    had_judas_short = judas_short.rolling(judas_window, min_periods=1).max().gt(0)
+
+    # ---- MSS after the sweep (close breaks a recent swing) ----
+    sw_h, sw_l = ic.swing_highs_lows(high, low)
+    recent_h = high.where(sw_h).rolling(ms_lookback, min_periods=1).max().shift(1)
+    recent_l = low.where(sw_l).rolling(ms_lookback, min_periods=1).min().shift(1)
+    ms_bull = close.gt(recent_h) & had_judas_long
+    ms_bear = close.lt(recent_l) & had_judas_short
+
+    # ---- FVG on the entry TF confirming the reversal ----
+    f = ic.fvg(high, low, close, lookback=30)
+    fvg_bull = f["fvg_live_bull"].rolling(fvg_lookback, min_periods=1).max().gt(0)
+    fvg_bear = f["fvg_live_bear"].rolling(fvg_lookback, min_periods=1).max().gt(0)
+
+    # ---- Entry: price returns to the Daily Open after MSS + FVG ----
+    ret_long = (close > d_open) & (close.shift(1) <= d_open.shift(1))
+    ret_short = (close < d_open) & (close.shift(1) >= d_open.shift(1))
+    entries = ret_long & ms_bull & fvg_bull
+    shorts = ret_short & ms_bear & fvg_bear
+
+    if weekly_anchor:
+        if require_weekly:
+            entries = entries & close.gt(w_open)
+            shorts = shorts & close.lt(w_open)
+
+    kz = pd.Series(True, index=df.index)
+    if killzones:
+        kz = ic.is_killzone(ic.session(idx))
+        entries = entries & kz
+        shorts = shorts & kz
+    entries = entries.fillna(False)
+    shorts = shorts.fillna(False)
+
+    # ---- SL below the Judas sweep low / above the sweep high ----
+    atr = ic.atr(high, low, close, period=14)
+    sweep_low = low.where(judas_long).rolling(judas_window, min_periods=1).min()
+    sweep_high = high.where(judas_short).rolling(judas_window, min_periods=1).max()
+    sl = pd.Series(np.nan, index=df.index)
+    sl[entries] = (sweep_low - atr * sl_atr)[entries]
+    sl[shorts] = (sweep_high + atr * sl_atr)[shorts]
+
+    conf = pd.Series(4, index=df.index)
+    ru, pw = _confluence_matrix(conf)
+    return _collect(entries, shorts, sl, pd.Series(0, index=df.index),
+                    {"confluences": conf, "risk_unit": ru, "prob_win": pw,
+                     "d_open": d_open, "w_open": w_open,
+                     "acc_low": acc_low, "acc_high": acc_high,
+                     "judas_long": judas_long, "judas_short": judas_short,
+                     "ms_bull": ms_bull, "ms_bear": ms_bear,
+                     "fvg_bull": fvg_bull, "fvg_bear": fvg_bear,
+                     "ret_long": ret_long, "ret_short": ret_short},
+                    name="demon2_po3_fractal")
+
+
 def _resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     """Convert an OHLCV frame to a target rule (e.g. 'W' weekly, 'M' monthly)."""
     out = pd.DataFrame({
@@ -297,8 +391,8 @@ def _breaker_block(high, low, close, lookback: int = 10) -> dict:
        bearish = last significant LL preceding a structure-breaking HH;
        bullish = last significant HH preceding a structure-breaking LL."""
     sw_h, sw_l = ic.swing_highs_lows(high, low)
-    swing_h = close.where(sw_h).rolling(lookback).max().shift(1)
-    swing_l = close.where(sw_l).rolling(lookback).min().shift(1)
+    swing_h = close.where(sw_h).rolling(lookback, min_periods=1).max().shift(1)
+    swing_l = close.where(sw_l).rolling(lookback, min_periods=1).min().shift(1)
     hi = close.rolling(lookback * 2).max().shift(lookback)
     lo = close.rolling(lookback * 2).min().shift(lookback)
     bb_bull = (close > hi) & swing_l.notna()          # broke HH above a recent LL
@@ -307,7 +401,7 @@ def _breaker_block(high, low, close, lookback: int = 10) -> dict:
             "swing_h": swing_h, "swing_l": swing_l}
 
 
-def mmxm(df, enable_breaker: bool = False) -> dict:
+def mmxm(df, enable_breaker: bool = False, atr_sl_mult: float = 1.5) -> dict:
     fvg_ = ic.fvg(df["high"], df["low"], df["close"])
     if enable_breaker:
         bb = _breaker_block(df["high"], df["low"], df["close"])
@@ -316,7 +410,10 @@ def mmxm(df, enable_breaker: bool = False) -> dict:
     else:
         bullish = pd.Series(False, index=df.index)
         bearish = pd.Series(False, index=df.index)
+    atr = ic.atr(df["high"], df["low"], df["close"], period=14)
     sl = pd.Series(np.nan, index=df.index)
+    sl[bullish] = df["close"][bullish] - atr[bullish] * atr_sl_mult
+    sl[bearish] = df["close"][bearish] + atr[bearish] * atr_sl_mult
     conf = pd.Series(4, index=df.index)
     ru, pw = _confluence_matrix(conf)
     dir_sig = pd.Series(0, index=df.index)
@@ -478,6 +575,7 @@ def compute(df: pd.DataFrame, strategy: str = "all", **params) -> dict:
     registry = {
         "continuation_bias": continuation_bias,
         "po3": po3,
+        "po3_fractal": po3_fractal,
         "power_flow": power_flow,
         "weekly_bias": weekly_bias,
         "abc": abc,

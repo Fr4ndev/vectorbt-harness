@@ -57,10 +57,11 @@ Liquidity Sweep 1H + Scalp OTE micro.
 |----|------|----|-------------|----|
 | `continuation_bias` | Continuation Bias + deviation | D+4h | close vs prev range, dev<33% | 1:3 |
 | `po3` | Power of 3 (AMD) | D | manip low<prevL close>prevO; dev<35% | 1:5 |
+| `po3_fractal` | PO3 fractal: ancla 00:00 UTC, Judas Swing, MSS+FVG 15/30m | 1h–1d | retorno al Open tras MSS+FVG | — |
 | `power_flow` | Power Flow hierarchy (M>W>D) | D | monthly>weekly>daily sweep | bias |
 | `weekly_bias` | Weekly extension (Tue/Wed) | D/W | 5-day min > prevW low, RR≥1 | fixed |
 | `abc` | ABC retrace / Wave 3 | 4h | A down, B up, C 2x down; short only | 1:2 |
-| `mmxm` | Market Maker Model (breaker) | 4h | breaker block + FVG (dead without breaker) | bias |
+| `mmxm` | Market Maker Model (breaker, SL ATR) | 4h | breaker block + FVG; SL real ATR×1.5 | bias |
 | `ote_tbr` | OTE 2.0 + TBR macro | 1h | displacement + price in OTE fib | 1:1 |
 | `liquidity_trap` | Liquidity trap / breaker | 1h | sweep prior bar + close back | 1:3 |
 | `ifvg` | Inversion FVG | 4h | close breaks FVG, inverts support/res | 1:3 |
@@ -108,6 +109,7 @@ Agentic-suite extraction strategies:
 | `intraday_quantum` | SMT (1.5) + displacement (1.0) + MSS (1.0), score≥2.5 | — |
 | `macro_swing` | weekly z ±1.5 + daily MSB + 4h sweep; depth-bias required | 1:5 |
 | `sfp` | swing failure (rejection > 50%) long/short | — |
+| `sfp_institutional` | SFP con profundidad 0.15–0.50%, reclaim ≤2 velas, killzone Londres/NY | — |
 
 ### 7. fib_retrace — `signals/fib_retrace/fib_retrace.py` (`--family fib_retrace`)
 Multi-TF Fibonacci retracement engine. Auto swing high/low defines the impulse
@@ -136,8 +138,10 @@ trigger-bar extreme (ATR buffer) → real brackets.
   entry frame (HTFs resampled internally, e.g. when swept at 1h/2h/4h/1d).
   `_infer_tf` deduce el TF real del dato (freq → mediana de `np.diff` en horas)
   para activar el gate estricto aunque el index no tenga `freq`.
-- Verdicto del profit map (2026-09-02): **ifvg PROFITABLE +69.73% (7/8 celdas)**;
-  fib_retrace, power_flow, fvg, po3, sfp → UNPROFITABLE; detalles en
+- Verdicto del profit map (2026-09-02, run final 100004): **ifvg PROFITABLE
+  +79.81% (7/8 celdas) con trail runner**; **mmxm PROFITABLE +38.97% (5/8)** con
+  SL ATR real; po3_fractal y sfp_institutional sin edge claro aún; fib_retrace,
+  power_flow, fvg, po3, sfp → UNPROFITABLE; detalles en
   `reports/INFORME_PROFIT_MAP.md`.
 
 ---
@@ -145,8 +149,9 @@ trigger-bar extreme (ATR buffer) → real brackets.
 ## Profitability map
 
 `run_profit_map.py` sweeps BTC+ETH × 1h/2h/4h/1d (1 year) for the families of
-the backtest scope (fib_retrace, demon2:mmxm/po3/power_flow, fvg_mtf:ifvg/fvg,
-ictsuite x4) and writes a per-strategy verdict:
+the backtest scope (fib_retrace, demon2:mmxm/po3/po3_fractal/power_flow,
+fvg_mtf:ifvg/fvg, ictsuite:sfp/sfp_institutional/scalp_sweep/intraday_quantum/
+macro_swing) and writes a per-strategy verdict:
 
 ```
 ~/Escritorio/ccxtv2/venv/bin/python run_profit_map.py
@@ -158,8 +163,9 @@ Outputs `reports/profit_map_<ts>.csv` (per-cell) and
 
 ## Exits
 
-- `portfolio/exits.py::build_brackets(entry, sl, direction)` → 80/20 two-leg
-  brackets (tp1 1:2, tp2 1:5, sl→BE).
+- `portfolio/exits.py::build_brackets(entry, sl, direction, trail=None)` → 80/20
+  two-leg brackets (tp1 1:2, tp2 1:5, sl→BE); con `trail` (boolean series) la
+  pierna runner se ancla a esos stops en lugar de a la ratio fija.
 - `portfolio/engine.py::run(df, entries, short_entries, brackets, mode)`
   - `mode="simple"` — single full-position `from_signals`.
   - `mode="split"`  — simulates 80/20 partial+runner (leg_a/leg_b portfolios).

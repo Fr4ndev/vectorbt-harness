@@ -96,8 +96,13 @@ def _run_split(close, brackets, size, fees, slippage, init_cash, freq, partial):
         fees=fees, slippage=slippage, init_cash=init_cash * w1, freq=freq,
     )
 
-    # ---- Leg B: 20% runner to 1:5, SL moved to BE ----
-    rel_sl_b = ((close - sl_be) / close).abs()
+    # ---- Leg B: 20% runner to 1:5, SL moved to BE (or trailing anchor) ----
+    trail = brackets.get("trail")
+    if trail is not None and trail.notna().any():
+        # per-bar trailing invalidation (e.g. 4h-FVG opposite extreme)
+        rel_sl_b = ((close - trail) / close).abs()
+    else:
+        rel_sl_b = ((close - sl_be) / close).abs()
     rel_tp_b = ((tp2 - close) / close).abs()
     pf_b = vbt.Portfolio.from_signals(
         close=close,

@@ -20,6 +20,14 @@ Design (user spec, "FVG + sesión" flexible-bias mode):
         volume expansion on the trigger bar +1
     - SL: trigger-bar extreme (ATR-scaled), so the harness 1:2 / 1:5 split
       scheme produces real brackets (fixes power_flow's sl=NaN enterying).
+    - SSRN-quality gate (`quality_tfs`, default 1h): Score = (GapWidth/ATR)*
+      (Vol/SMA20) must be >= `quality_min` before the trigger fires.
+    - Adaptive confluence (`adaptive_confluence`): when entry ATR > its rolling
+      p75 (`adaptive_window`) the gate jumps to `adaptive_high` (4), else stays
+      at `adaptive_low` (2); replaces the rigid strict gate for strict_tfs.
+    - Runner invalidation (`trail_4h`): leg B stop is anchored to the opposite
+      extreme of the live 4h FVG (rising bottom for longs / falling top for
+      shorts) instead of static BE — exposed as `runner_inv` in the envelope.
 
 compute() returns the standard envelope plus extras (confluences, bias4, c1).
 """
@@ -58,6 +66,26 @@ def _htf_bias(frame: pd.DataFrame, rule: str, presence_window: int = 6) -> pd.Se
         index=htf.index,
     )
     return dir_s.reindex(frame.index, method="ffill").fillna(0)
+
+
+def _htf_fvg_inv(frame: pd.DataFrame, rule: str,
+                 presence_window: int = 6) -> tuple:
+    """Trailing-invalidation anchors: opposite extremes of recent live HTF FVGs.
+
+    For LONG runner invalidation we keep the *highest* live bullish-FVG bottom
+    within the presence window (tightest protective level); for SHORT the
+    *lowest* live bearish-FVG top. Shifted 1 HTF bar (causal) and ffill.
+    """
+    htf = _resample(frame, rule)
+    f = ic.fvg(htf["high"], htf["low"], htf["close"], lookback=30)
+    live_bull = f["fvg_live_bull"].shift(1)
+    live_bear = f["fvg_live_bear"].shift(1)
+    bull_bottom = htf["high"].shift(2).where(live_bull)
+    bear_top = htf["low"].shift(2).where(live_bear)
+    inv_long = bull_bottom.rolling(presence_window, min_periods=1).max()
+    inv_short = bear_top.rolling(presence_window, min_periods=1).min()
+    return (inv_long.reindex(frame.index, method="ffill"),
+            inv_short.reindex(frame.index, method="ffill"))
 
 
 def _live_gap_edges(high: pd.Series, low: pd.Series, close: pd.Series,
@@ -163,6 +191,18 @@ def fvg_mtf(df: pd.DataFrame, strategy: str = "ifvg", **params) -> dict:
     vol_mult = params.get("vol_mult", 1.3)
     window_4h = params.get("window_4h", 6)
     window_1h = params.get("window_1h", 4)
+    # ---- SSRN-quality gate: Score = (Gap Width / ATR) * (Vol / SMA(Vol,20)) ----
+    quality_tfs = params.get("quality_tfs", ("1h",))
+    quality_min = params.get("quality_min", 0.30)
+    # ---- adaptive confluence: ATR > its rolling p75 -> high gate, else low ----
+    adaptive_confluence = params.get("adaptive_confluence", False)
+    adaptive_window = params.get("adaptive_window", 250)
+    adaptive_high = params.get("adaptive_high", 4)
+    adaptive_low = params.get("adaptive_low", 2)
+    # ---- runner invalidation anchored to the opposite 4h-FVG extreme ----
+    trail_4h = params.get("trail_4h", True)
+    trail_tfs = params.get("trail_tfs", strict_tfs)
+    trail_min_atr = params.get("trail_min_atr", 0.5)
 
     high = df["high"]
     low = df["low"]
@@ -192,14 +232,30 @@ def fvg_mtf(df: pd.DataFrame, strategy: str = "ifvg", **params) -> dict:
     confluences += killzone
     confluences += g["width"] >= atr_ * gap_atr_mult
     vol_sma = volume.rolling(20, min_periods=5).mean().replace(0, np.nan)
-    confluences += (volume / vol_sma > vol_mult)
+    vol_mult_s = (volume / vol_sma).replace([np.inf, -np.inf], np.nan)
+    confluences += (vol_mult_s > vol_mult)
+
+    # ---- quality score (SSRN gap filter): width/ATR * volume/SMA20 ----
+    gap_quality = (g["width"] / atr_.replace(0, np.nan)) * vol_mult_s
+    use_quality = entry_tf in quality_tfs
+    quality_ok = gap_quality >= quality_min
+    if use_quality:
+        long_raw = long_raw & quality_ok
+        short_raw = short_raw & quality_ok
 
     # ---- gates ----
     if require_4h_bias:
         long_raw = long_raw & (bias4 > 0)
         short_raw = short_raw & (bias4 < 0)
-    long_entry = long_raw & (confluences >= min_confluence)
-    short_entry = short_raw & (confluences >= min_confluence)
+    if adaptive_confluence and entry_tf in strict_tfs:
+        atr_p75 = atr_.rolling(adaptive_window, min_periods=60).quantile(0.75)
+        min_conf = pd.Series(
+            np.where(atr_ > atr_p75, adaptive_high, adaptive_low), index=df.index
+        )
+    else:
+        min_conf = min_confluence
+    long_entry = long_raw & (confluences >= min_conf)
+    short_entry = short_raw & (confluences >= min_conf)
 
     # ---- SL on the trigger-bar extreme (ATR buffer) ----
     sl = pd.Series(np.nan, index=df.index)
@@ -213,6 +269,21 @@ def fvg_mtf(df: pd.DataFrame, strategy: str = "ifvg", **params) -> dict:
     sl_out[long_entry] = sl.shift(1)[long_entry]
     sl_out[short_entry] = sl.shift(1)[short_entry]
 
+    # ---- runner invalidation anchored to the opposite 4h-FVG extreme ----
+    trail = pd.Series(np.nan, index=df.index)
+    if trail_4h and entry_tf in trail_tfs:
+        inv_long, inv_short = _htf_fvg_inv(df, htf_4h, presence_window=window_4h)
+        inv_long_raw = inv_long.shift(1)
+        inv_short_raw = inv_short.shift(1)
+        # force an anchor floor at entry - ATR*k and keep the FVG level when present
+        atr_lim = atr_.shift(1) * trail_min_atr
+        anchor_long = inv_long_raw.where(inv_long_raw.notna(), close - atr_lim)
+        anchor_short = inv_short_raw.where(inv_short_raw.notna(), close + atr_lim)
+        trail[long_entry] = anchor_long[long_entry]
+        trail[short_entry] = anchor_short[short_entry]
+        trail[long_entry] = trail[long_entry].clip(upper=close[long_entry])
+        trail[short_entry] = trail[short_entry].clip(lower=close[short_entry])
+
     extras = {
         "confluences": confluences,
         "bias4": bias4.astype(int),
@@ -220,6 +291,10 @@ def fvg_mtf(df: pd.DataFrame, strategy: str = "ifvg", **params) -> dict:
         "mode": mode,
         "live_bear": g["live_bear"],
         "live_bull": g["live_bull"],
+        "gap_quality": gap_quality,
+        "min_confluence_per_bar": min_conf,
+        "trail_4h": trail_4h,
+        "runner_inv": trail,
     }
     return _collect(long_entry, short_entry, sl_out, pd.Series(0, index=df.index),
                     extras, name=f"fvg_mtf_{mode}")
