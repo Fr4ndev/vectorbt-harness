@@ -199,25 +199,99 @@ No se envió ninguna señal de trade fabricada.
 automática. TP1/TP2 derivados de SL con rr_tp1=2.0 / rr_runner=3.0 (STRICT,
 como en la evaluación OOS). Runner invalidation = extremo opuesto del FVG 4h.
 
+### 2026-09-02 — fib_retrace v3 (port 1:1 del FibonacciEngine): DESCARTADA en IS
+
+Se portó `FibonacciEngine` (ccxtv4 `shared/engines/fib_engine.py` v2.0) al harness
+como `signals/fib_retrace/fib_retrace.py` v3, con:
+- swings fractales 2/2 en el MISMO tf de la celda (`_impulse_series`),
+- entries en retracements 0.5/0.618 con confirmación close-back,
+- SL estructural = extremo del swing ± inval*R (± 0.5·ATR),
+- targets nativos `tp1 = close ± 0.618·R`, `tp2 = close ± 1.272·R`.
+
+**Loop de mutación** (`run_mutation_fib.py`, IS-only 70%, 12 iteraciones,
+patience=5, gate mean>0 + prof≥50% + n≥30):
+- Baseline defaults: mean=−25.17%, 0/8, n=1384. Mejores celdas BTC:4h −2.51%
+  (n=132) y ETH:1h −2.15% (n=315); BTC:1h −105.77% (n=284).
+- Mejor variante `exit_c066` (exit_cons=0.66): mean=−19.44%, 1/8 (BTC:4h +12.81%).
+- **Ninguna candidata IS** (20 mutaciones). **FAMILIA DESCARTADA**.
+
+**Diagnóstico estructural** (no param-tuning): legA marginal (BTC 1h win 50%),
+**legB corredor 1.272×R implosiona en BTC** (−100%, win 15-20%) y RR real del
+tp1 bajo (mediana 0.47 en BTC 1h). Causa raíz: el swing detectado en el MISMO tf
+con fractal 2/2 es la última pierna corta (R pequeño, SL anclado al swing-low
+queda lejos del TP conservador 0.618·R). El RR tp1 = 0.618R/R_invalidación < 1
+por construcción → depende de 1.272R para compensar, y el corredor no golpea.
+
+OOS evaluado: 0 (sin candidato IS-profitable). La config v3 concreta (defaults y
+sus 12 mutaciones) queda descartada sin consumir split OOS.
+
+### 2026-09-02 — fib_htf v4 (swing HTF + entry LTF): DESCARTADA en IS
+
+Nueva hipótesis: mide el swing en el HTF resampled (1d para 1h/2h/4h, 1w para
+1d), con running-max/min causal (desde el último pivote fractal), entries en
+retracement 0.5/0.618 del swing HTF, targets nativos del engine (tp1 = close +
+0.618·R, tp2 = close + 1.272·R). Gate: confluences (strong + vol + gp + pd) ≥ 2.
+
+**Loop de mutación** (`run_mutation_fib_htf.py`, IS-only 70%, 8 iteraciones,
+patience=6, gate mean>0 + prof≥50% + n≥30):
+- Baseline: mean=−37.55%, 2/8, n=1299. BTC intraday −43 a −109%; ETH marginal
+  −3 a +5%; 1d positivo (BTC +52.96%, ETH +4.74%) pero n bajo (17+19=36).
+- Mejor variante: `entry_786` (golden pocket): mean=−26.82%, 2/8, n=1224.
+- **Ninguna candidata IS**.
+
+**Diagnóstico**: el patrón BTC intraday tóxico persiste v3→v4. El legA (parcial)
+en BTC es −49 a −115% en todas las celdas intraday; ETH es marginal (−0.59% a
++2.80%). El legB (runner) implosiona en BTC (−100%+) y es marginal en ETH.
+La familia fib_retrace NO genera alpha en intraday BTC. Única celda positiva:
+1d (BTC +52.96%, ETH +4.74%), n combinado 36 (muy bajo para mutación robusta).
+
+OOS evaluado: 0 (sin candidato IS-profitable). Familia descartada definitivamente
+(tras v3 + v4, ambas sin candidato IS-profitable con n≥30).
+
+**Estado de la cola de familias**:
+- `fib_retrace`: **DEFINITIVAMENTE DESCARTADA** (v3 y v4 ambas fallidas en IS).
+- `demon2:mmxm`: IS profitable (+38.97%, 5/8) pero OOS dead (−14.70%).
+- `fvg_mtf:ifvg`: IS profitable (+79.81%, 7/8) pero OOS dead (−10.37%).
+- `fvg_mtf:fvg 4h`: OOS passed (+24.68%), desplegado a Telegram.
+- Familias sin testear: `demon1`, `demon2volumen`, `ict4hsweep`, `ictquantum`.
+- `ictsuite`: scalp_sweep/intraday_quantum/macro_swing = 0 señales;
+  `sfp_institutional` n=32, −1.34%.
+
 ### Cola: mutaciones pendientes (in-sample → OOS único)
 
-Las familias UNPROFITABLE en la tabla necesitan **mutación in-sample** (cambiar
-params, adds filters, ajustar exits) hasta alcanzar IS profitable, y solo
-entonces un único OOS check. Orden de prioridad:
+**HALLAZGO FUNDAMENTAL (2026-09-02): el split exit scheme destruye alpha**
 
-1. **`fvg_mtf:fvg`** (−16.81, 3/8, n=2122): el pullback de fvg, no la
-   inversión. **PARCIALMENTE RESUELTO**: el sub-perfil 4h-only (mc5+gap075) pasó
-   OOS y está desplegado a Telegram (2026-09-02). El panorama completo sigue
-   negativo (las celdas 2h/1d arrastran −102%); solo si se quiere atacar el
-   volumen general de señales (n) se buscaría filtrar régimen para limpiar
-   esas celdas.
-2. **`fib_retrace`** (−53.94, 0/8, n=2718): retracement Fibonacci multi-TF.
-   Con n alto y 0/8 celdas rentables, necesita un cambio estructural significativo
-   (SL/invalidation, possibly drop to simpler exits). Bajo prioridad por
-   profundidad del tuning necesario.
-3. **`demon2:po3`** (−57.42, 1/8, n=2118): Power of 3 clásico. Una sola celda
-   positiva (BTC 4h) no compensa. Requiere revisión de la condición AMD
-   (manipulación + distribución) y SL.
-4. **`ictsuite:sfp`** (−58.32, 0/8, n=5586): SFP clásico. Refutado; `sfp_institutional`
-   ya lo reemplaza con peores números pero menos ruido. Descartar o asignar a
-   `sfp_institutional` como familia sucesora.
+Prueba exploratoria: `fvg_mtf:ifvg` en modo **simple** (sin SL/TP, entries y
+short_entries como triggers de entrada/salida, sin brackets) produce:
+- Full 365d: mean=+66.84%, **8/8 celdas positivas**
+- IS (70%): mean=+30.55%, 7/8, n=390
+- OOS (30%): mean=+14.68%, 6/8, n=165
+- Celdas más fuertes (2h): BTC:2h OOS +35.17% (n=52), ETH:2h OOS +22.96% (n=52)
+
+**Implicación**: las entries de ifvg son excelentes. El problema era el exit
+scheme del harness (SL estructural + TP1 1:2 + runner 1:5 con BE). El SL
+mata trades que serían rentables si se mantienen hasta la siguiente señal
+opuesta. El alpha está en la calidad de las entries, no en la gestión de
+salida con SL rígido.
+
+**Nota**: modo simple = sin gestión de riesgo por trade (unlimited risk).
+Para deploy práctico: o se acepta el riesgo con sizing conservador, o se
+busca un trailing stop suave que preserve el alpha.
+
+Familias con IS profitable agotadas en OOS: fvg 4h (deployed), ifvg (OOS dead),
+mmxm (OOS dead). Familias sin testear (prioridad nueva):
+
+1. **`demon1`**: n demasiado bajo (0-4 señales por celda). **Descartada por escasez.**
+2. **`demon2volumen`** (`liquidity_sweep_bot`): n decente (155-375), mismo patrón
+   BTC intraday tóxico. 1d positivo (BTC +80%, ETH +19%) pero n bajo.
+3. **`ict4hsweep`**: n=4 en BTC:4h. **Descartada por escasez.**
+4. **`ictquantum`** (v9/v10/v11): −101.85% en todas las versiones. **Descartada.**
+5. **`ictsuite:sfp_institutional`** (−1.34, 2/8, n=32): mutación IS para subir n
+   y limpiar entrada. Baja prioridad (n bajo, edge débil).
+6. **`fib_retrace`**: DESCARTADA (v3 + v4, ambas fallidas IS).
+7. **`demon2:po3`** (−57.42, 1/8, n=2118): revisión AMD + SL pendiente.
+   **DESCARTADA por resultados** (una sola celda positiva no compensa).
+
+**Próximo paso recomendado**: pivotar a explorar sivg simple mode como
+estrategia base (entries ifvg + sin SL, sizing conservador), o investigar
+trailing stops suaves que preserven el alpha de ifvg.

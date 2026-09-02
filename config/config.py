@@ -55,6 +55,7 @@ REGISTRY: dict[str, dict] = {
         "module": "signals.fib_retrace.fib_retrace",
         "tf": "1h",
         "exit": "split",
+        "strategies": ["fib_retrace", "fib_htf"],
     },
     "fvg_mtf": {
         "module": "signals.fvg_mtf.fvg_mtf",
