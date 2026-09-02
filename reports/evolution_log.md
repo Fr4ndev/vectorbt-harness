@@ -598,3 +598,42 @@ setup. `1d` sigue sin señales estructurales.
 
 **Artefacto (heredado, sin tocar)**: colapso de sizing con overlap en split
 (total return < -100%) no abordado.
+
+## 2026-09-02 — HVFVG EXIT PIVOT evaluation (IS 70%)
+
+Diagnóstico previo: el runner estático Leg B (20% a 1:5, SL a BE) destruye la
+esperanza matemática (negativo en todas las celdas). Se evalúan dos pivots de
+salida manteniendo los signal defaults ganadores (vol1.8/entry0.5/atr_sl0.8/
+retest96/abs) en el tramo IS (70%). PF = media ponderada por nº de trades entre
+piernas. Objetivo: **PF medio del sistema > 1.15**.
+
+| PF (IS) | base 80/20 | All-In 1:2 | All-In 1:2.5 | SmartTrail 1.5 ATR |
+|---|---|---|---|---|
+| BTC 1h | 1.139 | 1.070 | **1.235** | 1.004 |
+| BTC 2h | 0.801 | 0.852 | 1.041 | 1.108 |
+| BTC 4h | 1.752 | 0.997 | **1.320** | 0.838 |
+| ETH 1h | 1.029 | 0.895 | 0.758 | 0.876 |
+| ETH 2h | 0.999 | **1.197** | 0.714 | 1.019 |
+| ETH 4h | 1.013 | **2.415** | **1.934** | 1.527 |
+| **mean** | 1.122 | **1.238** ✅ | **1.167** ✅ | 1.062 ❌ |
+| cells>1.15 | 1/6 | 2/6 | 3/6 | 1/6 |
+
+**Veredicto:**
+- **All-In Leg A SÍ satisface la meta de PF medio > 1.15** (1:2 → 1.238; 1:2.5 →
+  1.167). El edge está en el rebote inicial; concentrar el 100% en un TP fijo
+  1:2/1:2.5 elimina el lastre del runner. **1:2 es el mejor por PF medio**; 1:2.5
+  es el más estable por nº de celdas > 1.15 (3/6).
+- **Smart Trailing Leg B NO** (media 1.062, 1/6 celdas > 1.15): el trailing a
+  1.5 ATR de distancia cede demasiado del tramo y no mejora la expectativa sobre
+  el runner fijo. La continuación (leg B) sigue sin edge con cualquiera de las
+  dos gestiones.
+
+**Matiz honesto**: el PF medio > 1.15 se cumple a nivel de promedio del sistema,
+pero **no es consistente por celda** (all-in 1:2 solo 2/6 celdas > 1.15; 1:2.5
+3/6), y está empujado por las celdas 4h pequeñas (n≈14-20). Celdas como ETH 1h
+(0.758) y BTC 2h/1h permanecen < 1. Conclusion: la mejora es real y repetible a
+promedio, pero el sistema sigue sin un edge uniforme en todas las celdas.
+
+**Estado**: evaluación completada; **no se modificó** el exit scheme de
+producción de la familia (aún en decisión si adoptar All-In como exit global de
+hvfvg). Artefacto heredado de sizing en split sin tocar.
