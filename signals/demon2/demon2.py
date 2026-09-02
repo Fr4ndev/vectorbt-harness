@@ -124,11 +124,11 @@ def continuation_bias(df, atr_df=None, dev_fire: float = 33.0,
 # the London killzone, and distribution is confirmed by an MSS + FVG.
 # Entry fires when price returns to the Daily Open after the MSS.
 # ---------------------------------------------------------------------------
-def po3_fractal(df, acc_range: float = 0.0060, judas_window: int = 10,
-                ms_lookback: int = 10, fvg_lookback: int = 6,
+def po3_fractal(df, acc_range: float = 0.0030, judas_window: int = 10,
+                ms_lookback: int = 5, fvg_lookback: int = 6,
                 sl_atr: float = 0.2, daily_anchor: bool = True,
                 weekly_anchor: bool = True, require_weekly: bool = False,
-                killzones: bool = False) -> dict:
+                killzones: bool = True) -> dict:
     open_ = df["open"]
     high = df["high"]
     low = df["low"]

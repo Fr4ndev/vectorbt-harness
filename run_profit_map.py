@@ -31,10 +31,8 @@ DAYS = 365
 # (family, strategy, params, exit_kwargs) — the backtest scope requested by the user
 RUNS = [
     ("demon2", "mmxm", {"enable_breaker": True}, {}),
-    # grid-validated golden config: only BTC 4h shows the edge (1h bleeds)
-    ("demon2", "po3_fractal",
-     {"acc_range": 0.006, "judas_window": 10, "ms_lookback": 10,
-      "killzones": False}, {}),
+    # DATOS INSUFICIENTES (n<30): no se promociona hasta tener muestra valida
+    ("demon2", "po3_fractal", {}, {}),
     ("fvg_mtf", "ifvg", {}, {}),
     ("fvg_mtf", "fvg", {}, {}),
     ("ictsuite", "scalp_sweep", {}, {}),

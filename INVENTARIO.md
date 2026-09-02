@@ -84,7 +84,8 @@ TF: 1h (bias HTF 4h via z-score Valeyre).
   tenía los breaker a 0). En el mapa se corre con `enable_breaker=True`.
 - `atr_sl_mult=1.5`: SL real `close ∓ ATR14×1.5` sobre las barras de señal —
   necesario para que el verdicto sea honesto (el +100% previo con `sl=NaN` era
-  exposición pasiva). **Profit map: PROFITABLE +38.97 (5/8, n=382)**.
+  exposición pasiva). **Profit map IS: +38.97 (5/8, n=382) → FALLO OOS (walk-forward
+  70/30): −14.70% (0/8, n=95) → no desplegable** (ver `run_oos_validation.py`).
 - Requiere pandas ≥2.3 fix `min_periods=1` en `_breaker_block` para disparar.
 
 ### po3_fractal — PO3 fractal (Judas Swing, ancla 00:00 UTC)
@@ -94,8 +95,9 @@ TF: 1h (bias HTF 4h via z-score Valeyre).
   `min_periods=1`) + FVG formado en 15m/30m (`fvg_window`, gapW ≥ ATR×0.25).
 - SL: extremo del Judas Swing (`judas_low`/`judas_high`), extras `d_open`,
   `judas_long`/`judas_short`, `mss`, `fvg`.
-- **Profit map: UNPROFITABLE −1.88 pero n=4 totales** (solo BTC 1h/4h y ETH 1h/4h,
-  2h/1d 0) → sin datos suficientes para refutar; a vigilar.
+- **Profit map: UNPROFITABLE −2.03 (3/8, n=38)** con defaults originales
+  restaurados (revert de `ee3681a`, que horneó n=7 ruido). Mejor celda BTC 4h
+  +109.2. Sin edge claro aún; primera muestra válida a vigilar.
 
 ### ote_tbr — OTE 2.0 + TBR (1h)
 - Displacement: `|close−open| > ATR14 × 2.0`.
@@ -272,12 +274,14 @@ Sweep BTC+ETH × 1h/2h/4h/1d (1 año) de las familias del alcance del usuario:
 celda) y `reports/verdict_<ts>.csv` (veredicto por estrategia: `mean_return_pct >
 0`, ratio de celdas rentables ≥ 50% y total de señales).
 
-Veredicto 2026-09-02 (run final 100004, hardening + trail + fixes fase 2):
-**fvg_mtf:ifvg PROFITABLE +79.81% (7/8)** y **demon2:mmxm PROFITABLE +38.97%
-(5/8)** (SL ATR real); resto UNPROFITABLE (fib_retrace −53.94, power_flow −46.99
-con SL, po3 −57.42, sfp −58.32, fvg −16.81) o SIN SEÑALES (scalp_sweep,
-intraday_quantum, macro_swing); po3_fractal −1.88 y sfp_institutional −1.34 sin
-edge claro (n=4 y n=32). Detalle en `reports/INFORME_PROFIT_MAP.md`.
+Veredicto 2026-09-02 (run final 105952, post-revert; walk-forward OOS 70/30 en
+`run_oos_validation.py`): **fvg_mtf:ifvg y demon2:mmxm fueron PROFITABLE en
+in-sample (+79.81 / +38.97) pero FALLAN OOS** (ifvg −10.37% 4/8, mmxm −14.70%
+0/8) → **ninguna estrategia es desplegable hoy**; resto UNPROFITABLE
+(fib_retrace −53.94, power_flow −46.99 con SL, po3 −57.42, sfp −58.32, fvg
+−16.81) o SIN SEÑALES (scalp_sweep, intraday_quantum, macro_swing);
+po3_fractal −2.03 y sfp_institutional −1.34 sin edge claro (n=38 y n=32).
+Detalle en `reports/INFORME_PROFIT_MAP.md`.
 
 ```
 ~/Escritorio/ccxtv2/venv/bin/python run_profit_map.py
