@@ -30,17 +30,13 @@ DAYS = 365
 
 # (family, strategy, params, exit_kwargs) — the backtest scope requested by the user
 RUNS = [
-    ("fib_retrace", None, {}, {}),
     ("demon2", "mmxm", {"enable_breaker": True}, {}),
-    ("demon2", "po3", {}, {}),
     ("demon2", "po3_fractal", {}, {}),
-    ("demon2", "power_flow", {}, {}),
     ("fvg_mtf", "ifvg", {}, {}),
     ("fvg_mtf", "fvg", {}, {}),
     ("ictsuite", "scalp_sweep", {}, {}),
     ("ictsuite", "intraday_quantum", {}, {}),
     ("ictsuite", "macro_swing", {}, {}),
-    ("ictsuite", "sfp", {}, {}),
     ("ictsuite", "sfp_institutional", {}, {}),
 ]
 

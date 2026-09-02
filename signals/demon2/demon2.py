@@ -118,41 +118,7 @@ def continuation_bias(df, atr_df=None, dev_fire: float = 33.0,
 
 
 # ---------------------------------------------------------------------------
-# Strategy 2 — Power of 3 (AMD) 2.0
-# TF: Daily. "atr_d" is really the current candle range (H-L).
-# ---------------------------------------------------------------------------
-def po3(df, dev_fire: float = 35.0, sl_mult: float = 0.3, tp_mult: float = 1.5) -> dict:
-    open_ = df["open"]
-    high = df["high"]
-    low = df["low"]
-    close = df["close"]
-
-    prev_h = high.shift(1)
-    prev_l = low.shift(1)
-    prev_o = open_.shift(1)
-    prev_range = (prev_h - prev_l).replace(0, np.nan)
-
-    bullish = (low < prev_l) & (close > prev_o)
-    bearish = (high > prev_h) & (close < prev_o)
-    dev_pct = (close - prev_o).abs() / prev_range * 100
-    fire = dev_pct < dev_fire
-    bullish = bullish & fire
-    bearish = bearish & fire
-
-    atr_d = (high - low)
-    sl = pd.Series(np.nan, index=df.index)
-    sl[bullish] = close[bullish] - atr_d[bullish] * sl_mult
-    sl[bearish] = close[bearish] + atr_d[bearish] * sl_mult
-
-    conf = pd.Series(4, index=df.index)
-    ru, pw = _confluence_matrix(conf)
-    return _collect(bullish, bearish, sl, pd.Series(0, index=df.index),
-                    {"confluences": conf, "risk_unit": ru, "prob_win": pw},
-                    name="demon2_po3")
-
-
-# ---------------------------------------------------------------------------
-# Strategy 2b — PO3 Fractal (AMD anchored to 00:00 UTC Daily/Weekly Open)
+# Strategy 2 — PO3 Fractal (AMD anchored to 00:00 UTC Daily/Weekly Open)
 # Fractal PO3, not restricted to daily bars: the accumulation consolidates
 # around the session open, the Judas Swing sweeps the Asian liquidity during
 # the London killzone, and distribution is confirmed by an MSS + FVG.
@@ -260,6 +226,9 @@ def _resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Strategy 3 — Power Flow Sweeps hierarchy (M/W/D). Bias only.
 # Priority M > W > D, represented as a direction grade 1..-1 via np.select.
+# NOTE: refuted as an edge by the profit map — the +107.88% was a stopless
+# (passive-exposure) artifact; with a real ATR stop it scores -46.99. Kept in
+# the codebase for reference, excluded from run_profit_map.RUNS.
 # ---------------------------------------------------------------------------
 def power_flow(df: pd.DataFrame, df_m: pd.DataFrame | None = None,
                df_w: pd.DataFrame | None = None,
@@ -574,9 +543,8 @@ def compute(df: pd.DataFrame, strategy: str = "all", **params) -> dict:
     """
     registry = {
         "continuation_bias": continuation_bias,
-        "po3": po3,
         "po3_fractal": po3_fractal,
-        "power_flow": power_flow,
+        "power_flow": power_flow,  # refuted (stopless artifact), kept for reference
         "weekly_bias": weekly_bias,
         "abc": abc,
         "mmxm": mmxm,

@@ -24,7 +24,6 @@ from signals.demon2volumen.demon2volumen import compute as demon2volumen_compute
 from signals.ictquantum.ictquantum import compute as ictquantum_compute
 from signals.ict4hsweep.ict4hsweep import compute as ict4hsweep_compute
 from signals.ictsuite.ictsuite import compute as ictsuite_compute
-from signals.fib_retrace.fib_retrace import compute as fib_retrace_compute
 from signals.fvg_mtf.fvg_mtf import compute as fvg_mtf_compute
 
 
@@ -49,8 +48,9 @@ def main():
     _assert(set(["entries", "short_entries", "sl", "dir"]) <= set(r),
             "demon1.compute returns the standard envelope")
 
-    r2 = demon2_compute(df, strategy="po3")
-    _assert(r2["entries"].dtype == bool, "demon2 po3 entries are boolean")
+    r2 = demon2_compute(df, strategy="po3_fractal")
+    _assert(set(["entries", "short_entries", "d_open", "judas_long"]) <= set(r2),
+            "demon2 po3_fractal returns open anchors + judas swing")
 
     r3 = demon2volumen_compute(df, strategy="liquidity_sweep_bot")
     _assert(set(["entries", "short_entries"]) <= set(r3),
@@ -62,21 +62,11 @@ def main():
     r5 = ict4hsweep_compute(df, tier="4h")
     _assert("score" in r5, "ict4hsweep returns score")
 
-    r6 = ictsuite_compute(df, strategy="sfp")
-    _assert(r6["entries"].dtype == bool, "ictsuite sfp entries boolean")
-
     r6b = ictsuite_compute(df, strategy="sfp_institutional")
     _assert(set(["entries", "short_entries", "depth_long", "reclaim_long"]) <= set(r6b),
             "ictsuite sfp_institutional fires with depth + reclaim extras")
 
-    r2b = demon2_compute(df, strategy="po3_fractal")
-    _assert(set(["entries", "short_entries", "d_open", "judas_long"]) <= set(r2b),
-            "demon2 po3_fractal returns open anchors + judas swing")
-
-    r7 = fib_retrace_compute(df)
-    _assert(set(["entries", "short_entries", "sl", "dir"]) <= set(r7),
-            "fib_retrace returns the standard envelope")
-    _assert("confluences" in r7, "fib_retrace returns confluence scoring")
+    _assert(not r6b["entries"].empty, "sfp_institutional still computes on 1h")
 
     r8 = fvg_mtf_compute(df, strategy="ifvg")
     _assert(r8["entries"].dtype == bool and "bias4" in r8,

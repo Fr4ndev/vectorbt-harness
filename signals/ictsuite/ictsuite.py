@@ -184,46 +184,7 @@ def macro_swing(df, z_period: int = 50, z_threshold: float = 1.5,
 
 
 # ---------------------------------------------------------------------------
-# 4. Swing Failure Pattern (rejection > 50% of candle range)
-# ---------------------------------------------------------------------------
-def sfp(df, rejection_min: float = 50.0) -> dict:
-    close = df["close"]
-    high = df["high"]
-    low = df["low"]
-    open_ = df["open"]
-
-    ph = high.shift(1)
-    pl = low.shift(1)
-    pc = close.shift(1)
-    candle_range = (high - low).replace(0, np.nan)
-
-    # SFP_SHORT (bull trap): wick above prior high, close back below, red candle
-    sfp_short = (high > ph) & (close < open_) & (close < pc) & \
-                ((high - close) / candle_range * 100 > rejection_min)
-    # SFP_LONG (bear trap): wick below prior low, close back above, green candle
-    sfp_long = (low < pl) & (close > open_) & (close > pc) & \
-               ((close - low) / candle_range * 100 > rejection_min)
-
-    direction = pd.Series(0, index=df.index)
-    direction[sfp_long] = 1
-    direction[sfp_short] = -1
-
-    sl = pd.Series(np.nan, index=df.index)
-    sl[sfp_long] = low[sfp_long]
-    sl[sfp_short] = high[sfp_short]
-    rejection_long = (close - low) / candle_range * 100
-    rejection_short = (high - close) / candle_range * 100
-    return {
-        "entries": sfp_long, "short_entries": sfp_short, "sl": sl,
-        "dir": direction.astype(int),
-        "rejection_long": rejection_long, "rejection_short": rejection_short,
-        "level_long": pl, "level_short": ph,
-        "name": "ictsuite_sfp",
-    }
-
-
-# ---------------------------------------------------------------------------
-# 5. SFP Institutional (depth-filtered swing failure, strict reclaim, killzone)
+# 4. SFP Institutional (depth-filtered swing failure, strict reclaim, killzone)
 # ---------------------------------------------------------------------------
 def sfp_institutional(df, depth_min: float = 0.0015, depth_max: float = 0.0050,
                       rejection_min: float = 50.0, killzones: bool = True,
@@ -253,10 +214,14 @@ def sfp_institutional(df, depth_min: float = 0.0015, depth_max: float = 0.0050,
     sweep_short = (high > ph) & depth_short.between(depth_min, depth_max)
     sweep_long = (low < pl) & depth_long.between(depth_min, depth_max)
 
-    # strict reclaim: close back inside the prior swing range <= 2 candles
+    # strict reclaim: close back inside the prior swing range within the
+    # activation candle or the next `reclaim_bars` candles
     in_prev_range = close.between(pl, ph)
-    reclaim_short = in_prev_range | in_prev_range.shift(1)
-    reclaim_long = in_prev_range | in_prev_range.shift(1)
+    reclaim_long = in_prev_range
+    reclaim_short = in_prev_range
+    for k in range(1, reclaim_bars + 1):
+        reclaim_long = reclaim_long | in_prev_range.shift(k)
+        reclaim_short = reclaim_short | in_prev_range.shift(k)
 
     # candle rejection quality (wick vs body)
     rejection_long = (close - low) / candle_range * 100
@@ -296,7 +261,6 @@ def compute(df: pd.DataFrame, strategy: str = "scalp_sweep", **params) -> dict:
         "scalp_sweep": scalp_sweep,
         "intraday_quantum": intraday_quantum,
         "macro_swing": macro_swing,
-        "sfp": sfp,
         "sfp_institutional": sfp_institutional,
     }
     if strategy not in registry:
