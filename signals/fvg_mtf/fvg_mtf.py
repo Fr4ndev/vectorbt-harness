@@ -295,6 +295,11 @@ def fvg_mtf(df: pd.DataFrame, strategy: str = "ifvg", **params) -> dict:
         "min_confluence_per_bar": min_conf,
         "trail_4h": trail_4h,
         "runner_inv": trail,
+        "bear_gap_top": g["bear_gap"]["max_top"],
+        "bear_gap_bottom": g["bear_gap"]["min_bottom"],
+        "bull_gap_top": g["bull_gap"]["max_top"],
+        "bull_gap_bottom": g["bull_gap"]["min_bottom"],
+        "atr": atr_,
     }
     return _collect(long_entry, short_entry, sl_out, pd.Series(0, index=df.index),
                     extras, name=f"fvg_mtf_{mode}")

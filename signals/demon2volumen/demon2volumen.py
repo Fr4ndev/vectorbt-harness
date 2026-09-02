@@ -65,6 +65,9 @@ def liquidity_sweep_bot(df, swing_lookback: int = 10, atr_buf: float = 0.1,
     # entry: sweep buy-side pool + fake-out close back below
     bearish = (high > rolling_high) & (close < rolling_high)
     bearish &= rolling_high.notna()
+    # require a valid SL (e.g. ATR warmup) so no phantom open-ended position
+    # is emitted with an unreachable stop
+    bearish &= atr_.notna() & (high + atr_ * atr_buf).notna()
 
     sl = pd.Series(np.nan, index=df.index)
     sl[bearish] = high[bearish] + atr_[bearish] * atr_buf

@@ -295,3 +295,214 @@ mmxm (OOS dead). Familias sin testear (prioridad nueva):
 **Próximo paso recomendado**: pivotar a explorar sivg simple mode como
 estrategia base (entries ifvg + sin SL, sizing conservador), o investigar
 trailing stops suaves que preserven el alpha de ifvg.
+
+### Trailing stop para ifvg (2026-09-02): triada, no alpha genuino
+
+Siguiendo el hallazgo anterior, se probaron trailing stops suaves para
+preservar el alpha de ifvg sin el SL rígido del split. 3 variantes acordadas
+para competir por UN solo check OOS (regla global-best):
+
+- **v1 `straight_bos`** (copia splits + BOS structure exit): **DESCARTADA en
+  diseño** — propia implementación dio +108% idéntico en TODOS los params
+  (señal inequívoca de bug: ningún param cambiaba el resultado, no se estaba
+  aplicando). Rediseñarla a ciegas antes de un check OOS de un solo disparo
+  = riesgo de quemar la disciplina. Drop.
+- **v2 `atr_trailing`** (`sl_stop=atr×mult/close` Series + `sl_trail=True`):
+  mecánica verificada correcta (tests sintéticos: long que sube no sale con
+  5% trail; long que cae sale a −5%). Pero IS best `atr35` (ATR×3.5) =
+  mean +87.10%, 7/8, n=675 — **sospechoso**. Inspección de trades:
+  - Win rates pobres: BTC 2h 47%, BTC 4h 50%, ETH 2h 41%, ETH 4h 41%.
+  - Media domina por pocas operaciones monstruos: top-3 = 28-49% del total
+    (BTC 2h: top3 +28% pero total +24% → el resto neto NEGATIVO; ETH 2h:
+    top3 +38% vs total +5%). Sin los top-3, varias celdas serían negativas.
+  - → **trend/regime-fitting**: el trail ancho (ATR×3.5) atrapa unos pocos
+    trend moves largos del sample; NO es edge reproducible (contradice el
+    consenso establecido de que BTC intraday split es tóxico −43 a −115%).
+- **v3 `fvg_anchored`** (`sl_stop` = gap bottom/top de FVG, nivel fijo): IS
+  best `no4h` (require_4h_bias=False) = mean +85.01%, 5/8, n=1295. Misma
+  sospecha de dependencia de pocos trend-moves.
+
+**Problema de disciplina detectado**: mi candidato-selector rechazó el
+verdadero best global (`atr35`) por la gate estricta por-celda (BTC:1h n=27<30
+con ret positivo) y gastó el OOS shot en `no4h` (2º best) → +32.35%, 6/8, n=526
+(OOS pass). Esto viola la regla "global-best → único OOS". El fix futuro:
+OOS-check el best GLOBAL por mean, no el gateado.
+
+**Verdicto final**: la línea **fvg/ifvg trailing stop (v1 BOS + v2 ATR + v3 FVG)
+queda DEFINITIVAMENTE DESCARTADA** — artefacto de trend-fitting (winrate real
+~40-50%, retorno concentrado en pocas operaciones top-3), no edge reproducido.
+Ninguna de las 3 variantes genera alpha que sobreviva a la inspección de
+distribución de trades; no se despliega. El alpha de ifvg sigue siendo el de
+las entries (hallazgo simple mode), que requiere o riesgo ilimitado (no
+desplegable) o un trailing que no concentre el ret en pocos trades.
+
+**Proceso/pendientes resueltos este turno**:
+- Daemon fvg 4h (PID 20501): estaba VIVO desde 12:41 (mc5+gap075,
+  RR 2.0/3.0/90, 1 instancia confirmada). **KILLED por decisión del usuario**
+  (confirmado muerto, sin instancias activas). El deploy validado deja de
+  monitorear/avisar.
+- Hallazgo "+66.84% simple mode" = 365d completo → **data peeking confirmado**
+  (NO pasó IS-only→OOS único); rechazado como base directa.
+
+**Siguiente en cola (misma disciplina, sin reintentar muertos)**:
+- Revisar `ictsuite:sfp_institutional` (mutación IS para subir n / limpiar
+  entrada, edge débil n=32) o `demon2volumen:liquidity_sweep_bot` (n decente,
+  pattern BTC intraday tóxico, 1d positivo con n bajo). Ambas sin quebrar la
+  regla global-best → único OOS. Filtro propuesto "concentración en top-N"
+  como gate de rechazo anticipado: mejora razonable, no urgente.
+
+### `ictsuite:sfp_institutional` (2026-09-02): DESCARTADA — escasez + sin edge
+
+Mutación IS-only (70% de 365d, BTC/ETH 1h+4h, 15 mutaciones) para subir n y
+limpiar la entrada. Resultado:
+- Baseline: mean −1.07%, 1/4, n=13, **toda celda n<30**.
+- Mejor variante `rej30` (rejection_min=30): mean −0.97%, 1/4, n=14 — sigue
+  negativo y con n irrisorio (n<30 en las 4 celdas en TODAS las mutaciones).
+- `killzones=False` (la que más n sube: 33-39 total): −6 a −8%. Ensanchar la
+  entrada añade ruido, no edge.
+- Solo BTC:4h da +3.45% en el grid previo (n=8, 2/6 celdas) — n demasiado bajo
+  para promover y no sostiene IS.
+
+**Veredicto**: sin candidato IS-profitable con n≥30. La señal sfp_institutional
+es demasiado escasa (rara) y sin edge en IS. **DESCARTADA DEFINITIVAMENTE.**
+OOS: 0 evaluaciones (sin candidato).
+
+**Siguiente**: `demon2volumen:liquidity_sweep_bot` (n decente 155-375, patrón
+BTC intraday tóxico, 1d positivo con n bajo). Misma disciplina global-best →
+único OOS.
+
+---
+
+## 🔴 CRÍTICO — BUG DE PIPELINE: `_run_split` colapsa señales densas (2026-09-02)
+
+**Hallazgo durante la mutación de `demon2volumen:liquidity_sweep_bot`**: el
+backtest dio +86%/+232%/+266% fantasmas. Inspección reveló **bug de sizing**,
+no artefacto de trend-fitting (esto último era sospecha inicial, el real es
+peor: un error de medición del pipeline).
+
+**CAUSA RAÍZ EXACTA (confirmada, mínima + datos reales)**:
+- `_run_split` en `portfolio/engine.py` pasa `size=size*w1` (=0.8 por defecto)
+  a `Portfolio.from_signals` **sin `size_type`**. vectorbt deduce
+  `size_type='percent'` (80% de la EQUITY por posición).
+- Cuando las señales son densas y las posiciones se **solapan** (nueva entry
+  mientras la previa sigue abierta), la posición anterior tiene bloqueado el
+  80% de la equity → la siguiente entry del 80% no se puede fondear →
+  **margin rejection → la señal se descarta en silencio** → colapso.
+- No es por dirección (afecta longs y shorts), no son los stops, no es
+  `accumulate`. Es el `size_type='percent'` + posiciones solapadas.
+- Fix confirmado: `size=0.8, size_type='value'` (dinero absoluto por posición)
+  restaura 213 trades donde `size=0.8` (percent) daba 2.
+- Repro mínima: 10 shorts consecutivos → 1 trade.
+
+**RADIO DE IMPACTO (medido: ratio trades/signals; ratio<0.7 = colapso)**:
+- `fvg_mtf:ifvg` → **SANO** (ratio 1.08-1.75). Su OOS-pass se mantiene. ✅
+- `demon2:mmxm` → **SANO** (ratio 1.50-1.83). Su OOS-pass se mantiene. ✅
+- `fvg_mtf:fvg` → **CONTAMINADO** en BTC:2h (0.08), BTC:4h (0.62), BTC:1d (0.19),
+  ETH:2h (0.71). El veredicto "fvg descartada" NO es fiable en esas celdas.
+- **Deploy fvg 4h (mc5+gap075)** → **SANO** (ratio 1.78/1.70, señales escasas no
+  solapan). El deploy a Telegram se mantiene válido. ✅
+- `demon2volumen:sweep` (short-only denso) → **colapso TOTAL** (335→1, +316%
+  fantasma). Resultado inválido.
+- `ictsuite:sfp` → escasez (n≈30), independiente del bug; su descarte por
+  escasez sigue en pie.
+
+**CANDIDATOS A RE-VERIFICAR tras el fix (`size_type='value'`)**:
+1. `fvg_mtf:fvg` en BTC:2h, BTC:4h, BTC:1d, ETH:2h — puede cambiar el veredicto.
+2. `demon2volumen:sweep` — re-medir con el fix (edge real o descarte real).
+
+**NO TOCAR `_run_split` HASTA reportar el alcance al usuario.** Prioridad:
+acotar el daño y corregir el sizing en el pipeline ANTES de seguir el loop.
+---
+
+## 2026-09-02 — demon2volumen:sweep ghost +316% ROOT CAUSE FOUND & FIXED
+
+**Decisión del usuario**: señales solapadas mismo lado = UNA posición por lado a la
+vez (re-entry tras exit). El colapso a menos trades es CORRECTO. El bug real es el
+**return fantasma de medición**, no el sizing. (El naive `size_type='value'` se
+rechazó: cambiaba familias sanas — BTC 4h +180%→+17%, ETH +10%→+33%.)
+
+**Diagnóstico empírico (BTC:2h swing5+atr02)**:
+- legA colapsaba a **1 trade** que entraba en idx 9 y salía en idx 3065 (última
+  barra): una posición ABIERTA que jamás se cerraba, marcada **+316% unrealized**
+  al cierre final. Ese 1 trade bloqueaba los 335 re-entries → falso colapso total.
+
+**Causa raíz**: `liquidity_sweep_bot` emitía señal en idx 9 con **SL=NaN** (ATR
+period 14 sin warmup: `atr[9]=NaN` → `sl[9]=NaN`), pero `bearish=True` y `dir=-1`
+igual. En `_run_split`, `.fillna(np.inf)` convierte ese SL/TP NaN en **stops
+inalcanzables** → posición perpétua. (1 de 335 señales shorts con SL NaN.)
+- Verificado: short con `sl_stop`/`tp_stop` relativos POSITIVOS se aplican como
+  stop-up/down correctos en vectorbt — la dirección NO era el bug. Solo el NaN-SL.
+
+**Fix aplicado** (`signals/demon2volumen/demon2volumen.py`): descartar la señal si
+ATR/SL no es válido: `bearish &= atr_.notna() & (high+atr_*atr_buf).notna()`.
+- No toca sizing de familias sanas. Colapso legítimo (una posición por lado) se
+  conserva; solo elimina el fantasma de posición-abierta-sin-stop.
+
+**Resultado post-fix (re-run `run_mutation_sweep.py` IS)**:
+- BTC:2h +232%→ legA 15 trades reales; BTC:4h +266%→ normal.
+- **NO CANDIDATO** (n>=30 no se cumple: n_below30=1-2, varias celdas <30).
+  Familia `demon2volumen:sweep` → **DESCARTADA** (veredicto ahora fiable).
+
+**OBSERVACIÓN PENDIENTE (no es el scope de este fix)**: el split-mode sigue
+produciendo Total Return < -100% (legA -102.47%) y sizes raros (0.0025, 0.7975) en
+algunas celdas → `_combine_split_stats` / `_combined_return` tiene su propio
+artefacto de medición (stacking legA+legB con `init_cash` y `size` mezclados).
+Aun así no altera el veredicto: ninguna config pasa el gate de candidato.
+
+**PENDIENTE CONOCIDO (no investigado por ahora — anotado)**: `_combine_split_stats` /
+`_combined_return` producen Total Return < -100% (p.ej. legA -102.47%) y `size` raros
+(0.0025, 0.7975) en algunas celdas tras el fix de NaN-SL. Artefacto de medición propio
+del stacking legA+legB (`init_cash`/`size` mezclados). No alteró el veredicto de sweep
+(descarte). **Respetar al medir** futuras familias + no tocarlo sin enfoque dedicado.
+
+## 2026-09-02 — fvg 4 celdas contaminadas: RE-EVALUACIÓN (colapso = correcto)
+
+Contexto: el veredicto previo "fvg descartada" se marcó NO fiable en BTC:2h, BTC:4h,
+BTC:1d, ETH:2h por ratio trades/signals bajo (colapso). Per la decisión del usuario el
+colapso a menos trades ES comportamiento correcto (una posición por lado). Re-evaluado
+con disciplina IS-only (70% de 365d), sin peeking, un único check OOS solo si hay
+candidato.
+
+**Resultado (run_mutation_fvg.py, IS)**:
+- Baseline: mean=-20.33%, prof=3/8, n=1430 → no gate.
+- Best `gap_100`: mean=-13.22%, prof=3/8, n=1221 → **NO pasa gate** (mean<0, prof<50%).
+- Las celdas BTC:2h (-102.27%) y BTC:1d (-102.87%) leen el artefacto
+  `_combine_split_stats` (< -100%), NO retorno real — pero el veredicto NO depende de
+  ellas: la familia ya falla en las celdas legibles (3/8 prof, media negativa).
+
+**Veredicto**: `fvg_mtf:fvg` → **DESCARTADA definitivamente** en estas celdas. No se
+consumió OOS (sin candidato IS-profitable n≥30). El colapso correcto (una posición por
+lado) no resucita fvg.
+
+**Siguiente en cola**: `demon2volumen:liquidity_sweep_bot` (hecho, descartada) y
+`ictsuite:sfp_institutional` (ya descartada). La cola de familias iso se agota con fvg.
+
+## 2026-09-02 — fvg 4h deploy RE-VERIFICADO bajo el motor actual (pre-push)
+
+Comprobación final antes del push: re-correr la config desplegada (`fvg`,
+strict_tfs=("4h",), strict_min_confluence=5, gap_atr_mult=0.75, exits STRICT
+rr_tp1=2.0 / rr_runner=3.0 / weight_tp1=0.9) contra el `engine.py` del working tree
+(estado = lo que se va a commitear).
+
+Nota de premisa: **NO hay fix de `size_type` en `_run_split`** (el naïve
+`size_type='value'` se rechazó por alterar familias sanas; la decisión de overlap
+posiciones = colapso correcto dejó el sizing intacto). El único cambio de
+`engine.py` es el modo `trailing` (ortogonal a este deploy). Esta re-verificación
+confirma que el deploy no depende de ningún cambio de sizing.
+
+| Métrica | IS (70%) | OOS (30%) | log pre-deploy |
+|---|---|---|---|
+| mean | +72.55% | **+24.68%** | +24.68% ✅ idéntico |
+| BTC 4h | +138.90% (n=22) | **+47.21%** (n=8) | +47.2 / n8 ✅ |
+| ETH 4h | +6.20% (n=12) | **+2.14%** (n=8) | +2.1 / n8 ✅ |
+
+**OOS PASS: True** (mean>0, 2/2). El deploy fvg 4h se mantiene **válido e
+inmutable** bajo el motor que se va a pushear. Resultado bit-a-bit idéntico al
+pre-deploy → el deploy no se ve afectado por los cambios pendientes.
+
+**KILL DAEMON — trazabilidad**: PID 20501 (`run_live_monitor.py`, fvg 4h
+mc5+gap075) confirmado **MUERTO** en este turno: `ps -p 20501` no devuelve proceso y
+no hay instancias `run_live_monitor` activas. Confirmación UTC: **2026-09-02
+15:20 UTC**. El daemon estuvo vivo desde 12:41 UTC (arranque) y dejó de monitorear
+al ser eliminado; no siguió mandando señales tras el kill. (El arranque usaba la
+config validada; el kill lo dejó fuera de servicio sin señales no válidas extra.)

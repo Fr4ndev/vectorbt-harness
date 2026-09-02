@@ -31,8 +31,11 @@ def run(
     slippage: float = 0.0003,
     init_cash: float = 10000.0,
     freq: str | None = None,
-    mode: str = "simple",  # 'simple' | 'split'
+    mode: str = "simple",  # 'simple' | 'split' | 'trailing'
     partial: bool = True,
+    sl_stop: pd.Series | None = None,
+    sl_trail: bool = False,
+    tp_stop: pd.Series | None = None,
 ) -> dict:
     """Run a vectorbt portfolio and return a dict of results.
 
@@ -42,6 +45,7 @@ def run(
         brackets: output of exits.build_brackets (entries/sl/tp1/tp2).
         mode='simple': one from_signals call (needs entries / short_entries).
         mode='split':  partial (80% tp1) + runner (20% tp2, SL to BE).
+        mode='trailing': single position with sl_stop (optionally trailing).
     """
     close = df["close"]
     if freq is None:
@@ -60,13 +64,33 @@ def run(
         )
         return _wrap(pf, df, close)
 
+    if mode == "trailing":
+        kwargs = dict(
+            close=close,
+            entries=entries,
+            short_entries=short_entries,
+            size=size,
+            fees=fees,
+            slippage=slippage,
+            init_cash=init_cash,
+            freq=freq,
+        )
+        if sl_stop is not None:
+            kwargs["sl_stop"] = sl_stop
+        if sl_trail:
+            kwargs["sl_trail"] = True
+        if tp_stop is not None:
+            kwargs["tp_stop"] = tp_stop
+        pf = vbt.Portfolio.from_signals(**kwargs)
+        return _wrap(pf, df, close)
+
     if mode == "split":
         if brackets is None:
             raise ValueError("mode='split' requires brackets from portfolio.exits")
         res = _run_split(close, brackets, size, fees, slippage, init_cash, freq, partial)
         return res
 
-    raise ValueError("mode must be 'simple' or 'split'")
+    raise ValueError("mode must be 'simple', 'split', or 'trailing'")
 
 
 def _run_split(close, brackets, size, fees, slippage, init_cash, freq, partial):
