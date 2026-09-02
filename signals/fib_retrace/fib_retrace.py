@@ -7,15 +7,16 @@ Spec:
     - Entries when price tests/breaks the 0.5 or 0.8 retracement of R with
       close-confirmation (close back above the level for longs, back below for
       shorts).
-    - Exits / invalidation: stop-invalidation at -0.17/-0.27 (symmetric beyond
-      the swing), TP extensions at 1.17/1.27 beyond the impulse, 0.5 partial
-      level. The harness engine applies its default 1:2 / 1:5 split scheme on
-      top of the strategy SL; the raw fib levels are exposed as extras.
+    - Exits / invalidation (v2): stop-invalidation at -0.10/-0.17 (symmetric,
+      shortened to protect capital on false 0.8 breaks), native TP wiring of the
+      train extensions 1.17 / 1.27 plus a 0.50 partial (weight_tp1=0.5). The
+      runner passes tp1/tp2 to the engine's native brackets instead of the
+      generic 1:2 / 1:5 derivation.
     - Per-TF parametrization (1h/2h/4h/1d defaults) and multitimeframe
       confluence scoring (HTF bias + premium/discount + impulse quality).
 
 compute() returns the standard envelope: entries / short_entries / sl / dir,
-plus extras (confluences, fib levels, htf direction).
+plus native tp1/tp2 (and extras: confluences, fib levels, htf direction).
 """
 from __future__ import annotations
 
@@ -38,12 +39,26 @@ def _infer_tf(index: pd.DatetimeIndex) -> str:
     freq = str(freq.freqstr if freq is not None else "")
     if freq in ("h", "60min", "60T", "H"):
         return "1h"
+    if freq == "30min":
+        return "30m"
     if freq == "2h":
         return "2h"
     if freq == "4h":
         return "4h"
     if freq in ("D", "d"):
         return "1d"
+    if len(index) >= 2:
+        hours = np.median(np.diff(index.asi8)) / 3.6e12
+        if hours <= 0.75:
+            return "30m"
+        if hours <= 1.5:
+            return "1h"
+        if hours <= 3.0:
+            return "2h"
+        if hours <= 6.0:
+            return "4h"
+        if hours <= 30.0:
+            return "1d"
     return "4h"
 
 
@@ -134,8 +149,9 @@ def fib_retrace(df: pd.DataFrame, **params) -> dict:
     swing_lookback = conf["swing_lookback"]
     entry_levels = conf.get("entry_levels", [0.5, 0.8])
     tp_ext = conf.get("tp_ext", [1.17, 1.27])
-    inval_lvls = conf.get("invalidation", [0.17, 0.27])
+    inval_lvls = conf.get("invalidation", [0.10, 0.17])
     partial = conf.get("partial", 0.5)
+    partial_weight = conf.get("partial_weight", 0.5)
     inval_deep = conf.get("invalidation_deep", max(inval_lvls))
     inval_tight = conf.get("invalidation_tight", min(inval_lvls))
     htf_rules = conf.get("htf", [])
@@ -154,16 +170,19 @@ def fib_retrace(df: pd.DataFrame, **params) -> dict:
     lo_bull, hi_bull, rng_bull, valid_bull = _impulse_series(high, low, +1)
     long_entry = pd.Series(False, index=df.index)
     sl_long = pd.Series(np.nan, index=df.index)
+    tp1_long = pd.Series(np.nan, index=df.index)
+    tp2_long = pd.Series(np.nan, index=df.index)
     for lv in entry_levels:
         level = hi_bull - rng_bull * lv
         tested = low <= level
         confirm = close > level
         hit = tested & confirm & valid_bull & rng_bull.notna()
         long_entry = long_entry | hit
+    tp1_long[long_entry] = (lo_bull + rng_bull * tp_ext[0])[long_entry]
+    tp2_long[long_entry] = (lo_bull + rng_bull * tp_ext[-1])[long_entry]
     sl_long[long_entry] = (lo_bull - rng_bull * inval_deep)[long_entry]
     # tighter invalidation when only the shallower level was tested
     deep_hit = (low <= hi_bull - rng_bull * entry_levels[-1]) & long_entry
-    sl_long[deep_hit] = (lo_bull - rng_bull * inval_deep)[deep_hit]
     sl_long[long_entry & ~deep_hit] = (lo_bull - rng_bull * inval_tight)[
         long_entry & ~deep_hit
     ]
@@ -172,12 +191,16 @@ def fib_retrace(df: pd.DataFrame, **params) -> dict:
     lo_bear, hi_bear, rng_bear, valid_bear = _impulse_series(high, low, -1)
     short_entry = pd.Series(False, index=df.index)
     sl_short = pd.Series(np.nan, index=df.index)
+    tp1_short = pd.Series(np.nan, index=df.index)
+    tp2_short = pd.Series(np.nan, index=df.index)
     for lv in entry_levels:
         level = lo_bear + rng_bear * lv
         tested = high >= level
         confirm = close < level
         hit = tested & confirm & valid_bear & rng_bear.notna()
         short_entry = short_entry | hit
+    tp1_short[short_entry] = (hi_bear - rng_bear * tp_ext[0])[short_entry]
+    tp2_short[short_entry] = (hi_bear - rng_bear * tp_ext[-1])[short_entry]
     sl_short[short_entry] = (hi_bear + rng_bear * inval_deep)[short_entry]
     deep_hit_s = (high >= lo_bear + rng_bear * entry_levels[-1]) & short_entry
     sl_short[short_entry & ~deep_hit_s] = (hi_bear + rng_bear * inval_tight)[
@@ -226,11 +249,20 @@ def fib_retrace(df: pd.DataFrame, **params) -> dict:
     sl_out = pd.Series(np.nan, index=df.index)
     sl_out[long_entry] = sl_long.shift(1)[long_entry]
     sl_out[short_entry] = sl_short.shift(1)[short_entry]
+    tp1_out = pd.Series(np.nan, index=df.index)
+    tp2_out = pd.Series(np.nan, index=df.index)
+    tp1_out[long_entry] = tp1_long.shift(1)[long_entry]
+    tp1_out[short_entry] = tp1_short.shift(1)[short_entry]
+    tp2_out[long_entry] = tp2_long.shift(1)[long_entry]
+    tp2_out[short_entry] = tp2_short.shift(1)[short_entry]
 
     direction = pd.Series(0, index=df.index)
     extras = {
         "confluences": confluences,
         "htf_dir": htf_dirs,
+        "tp1": tp1_out,
+        "tp2": tp2_out,
+        "weight_tp1": partial_weight,
         "tp_ext": tp_ext,
         "partial": partial,
         "inv_levels": inval_lvls,

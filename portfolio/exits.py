@@ -78,6 +78,35 @@ def build_brackets(
     }
 
 
+def build_native_brackets(
+    entry: pd.Series,
+    sl: pd.Series,
+    tp1: pd.Series,
+    tp2: pd.Series,
+    direction: pd.Series,
+    weight_tp1: float = 0.8,
+) -> dict:
+    """Build the two-leg bracket from strategy-native absolute levels.
+
+    Used when a signal module provides its own TP levels (e.g. fib_retrace
+    wiring the 1.17/1.27 extensions and 0.5 partial) instead of letting the
+    harness derive 1:2 / 1:5 targets from the SL.
+    """
+    has = (direction != 0) & tp1.notna() & tp2.notna()
+    return {
+        "entry": entry,
+        "sl": sl,
+        "tp1": pd.Series(tp1.where(has), index=entry.index),
+        "tp2": pd.Series(tp2.where(has), index=entry.index),
+        "sl_tp1": sl,
+        "sl_be": entry,
+        "weight_tp1": weight_tp1,
+        "rr_tp1": None,
+        "rr_runner": None,
+        "has_signal": has,
+    }
+
+
 def relative_sl_tp(close: pd.Series, bracket: dict) -> dict:
     """Convert absolute brackets to the relative values vectorbt's
     sl_stop/tp_stop expect for a single full-position simulation."""

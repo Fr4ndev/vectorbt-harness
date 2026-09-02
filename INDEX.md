@@ -130,9 +130,15 @@ trigger-bar extreme (ATR buffer) → real brackets.
 - `ifvg` — inverse FVG 30m: price enters a live gap and closes back out of it
   (bear gap crossed back up → LONG, bull gap crossed back down → SHORT).
 - `fvg`  — FVG pullback continuation: retest of a live gap that holds.
-- Confluences 0..5, `min_confluence` gate (default 2), `require_4h_bias=True`,
+- Confluences 0..5, `min_confluence` gate (default 2; **strict 4** en 1h/4h),
+  `require_4h_bias=True`,
   shift 1 bar (no lookahead). Default entry TF 30m (`tf:"30m"`); works on any
   entry frame (HTFs resampled internally, e.g. when swept at 1h/2h/4h/1d).
+  `_infer_tf` deduce el TF real del dato (freq → mediana de `np.diff` en horas)
+  para activar el gate estricto aunque el index no tenga `freq`.
+- Verdicto del profit map (2026-09-02): **ifvg PROFITABLE +69.73% (7/8 celdas)**;
+  fib_retrace, power_flow, fvg, po3, sfp → UNPROFITABLE; detalles en
+  `reports/INFORME_PROFIT_MAP.md`.
 
 ---
 

@@ -112,16 +112,51 @@ def _collect(entries, shorts, sl, direction, extra=None, name="fvg_mtf"):
     return out
 
 
+def _infer_tf(index: pd.DatetimeIndex) -> str:
+    freq = getattr(index, "freq", None)
+    freq = str(freq.freqstr if freq is not None else "")
+    if freq in ("h", "60min", "60T", "H"):
+        return "1h"
+    if freq == "30min":
+        return "30m"
+    if freq == "2h":
+        return "2h"
+    if freq == "4h":
+        return "4h"
+    if freq in ("D", "d"):
+        return "1d"
+    if len(index) >= 2:
+        hours = np.median(np.diff(index.asi8)) / 3.6e12
+        if hours <= 0.75:
+            return "30m"
+        if hours <= 1.5:
+            return "1h"
+        if hours <= 3.0:
+            return "2h"
+        if hours <= 6.0:
+            return "4h"
+        if hours <= 30.0:
+            return "1d"
+    return "30m"
+
+
 def fvg_mtf(df: pd.DataFrame, strategy: str = "ifvg", **params) -> dict:
     """Multi-TF FVG engine (see module docstring). `strategy` in {ifvg, fvg}."""
     mode = "ifvg" if strategy in (None, "ifvg", "default") else strategy
     if mode not in ("ifvg", "fvg"):
         raise ValueError(f"Unknown fvg_mtf variant '{mode}'")
 
+    entry_tf = params.pop("tf", None) or _infer_tf(df.index)
     htf_4h = params.pop("htf_4h", "4h")
     htf_1h = params.pop("htf_1h", "1h")
     gap_lookback = params.get("gap_lookback", 30)
-    min_confluence = params.get("min_confluence", 2)
+    # stricter confluence on the weak entry TFs (BTC 1h blowout / 4h noise)
+    strict_tfs = params.get("strict_tfs", ("1h", "4h"))
+    strict_min = params.get("strict_min_confluence", 4)
+    user_min = params.get("min_confluence")
+    min_confluence = user_min if user_min is not None else (
+        strict_min if entry_tf in strict_tfs else 2
+    )
     require_4h_bias = params.get("require_4h_bias", True)
     atr_sl_mult = params.get("atr_sl_mult", 0.5)
     gap_atr_mult = params.get("gap_atr_mult", 0.5)

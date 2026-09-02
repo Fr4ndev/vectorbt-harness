@@ -28,21 +28,25 @@ SYMBOLS = ["BTC", "ETH"]
 TIMEFRAMES = ["1h", "2h", "4h", "1d"]
 DAYS = 365
 
-# (family, strategy, params) — the backtest scope requested by the user
+# (family, strategy, params, exit_kwargs) — the backtest scope requested by the user
 RUNS = [
-    ("fib_retrace", None, {}),
-    ("demon2", "mmxm", {"enable_breaker": True}),
-    ("demon2", "po3", {}),
-    ("demon2", "power_flow", {}),
-    ("fvg_mtf", "ifvg", {}),
-    ("fvg_mtf", "fvg", {}),
-    ("ictsuite", "scalp_sweep", {}),
-    ("ictsuite", "intraday_quantum", {}),
-    ("ictsuite", "macro_swing", {}),
-    ("ictsuite", "sfp", {}),
+    ("fib_retrace", None, {}, {}),
+    ("demon2", "mmxm", {"enable_breaker": True}, {}),
+    ("demon2", "po3", {}, {}),
+    ("demon2", "power_flow", {}, {}),
+    ("fvg_mtf", "ifvg", {}, {}),
+    ("fvg_mtf", "fvg", {}, {}),
+    ("ictsuite", "scalp_sweep", {}, {}),
+    ("ictsuite", "intraday_quantum", {}, {}),
+    ("ictsuite", "macro_swing", {}, {}),
+    ("ictsuite", "sfp", {}, {}),
 ]
 
 CELLS = [f"{sym}:{tf}" for sym in SYMBOLS for tf in TIMEFRAMES]
+
+# tighter runner / more aggressive partial only on the weak fvg_mtf entry TFs
+STRICT_FVG_TFS = ("1h", "4h")
+STRICT_FVG_EXIT = {"rr_runner": 3.0, "weight_tp1": 0.9}
 
 
 def _combined_return(result: dict) -> tuple:
@@ -62,13 +66,16 @@ def _combined_return(result: dict) -> tuple:
 
 def main():
     rows = []
-    for family, strategy, params in RUNS:
+    for family, strategy, params, exit_kwargs in RUNS:
         for cell in CELLS:
             symbol, tf = cell.split(":")
+            kwargs = dict(exit_kwargs)
+            if family == "fvg_mtf" and tf in STRICT_FVG_TFS:
+                kwargs.update(STRICT_FVG_EXIT)
             try:
                 res = runner.run_one(family=family, strategy=strategy,
                                      symbol=symbol, tf=tf, days=DAYS,
-                                     params=params)
+                                     params=params, **kwargs)
                 rec = {
                     "family": family, "strategy": strategy or "default",
                     "symbol": symbol, "timeframe": tf,
@@ -101,7 +108,7 @@ def main():
 
     print("\n== STRATEGY VERDICT ==")
     verdicts = []
-    for family, strategy, _ in RUNS:
+    for family, strategy, _, _ in RUNS:
         sub = df[(df["family"] == family) & (df["strategy"] == (strategy or "default"))]
         sub = sub.dropna(subset=["total_return_pct"])
         if sub.empty:

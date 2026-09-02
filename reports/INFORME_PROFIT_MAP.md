@@ -4,56 +4,61 @@ Fecha: 2026-09-02 · Harness: `~/Escritorio/harness_vectorbt` · Runtime: venv c
 Fuente de datos: Hyperliquid nativo paginado (caché en `data/cache/`).
 Exits: esquema unificado (80% TP1 1:2, 20% runner 1:5, SL→BE; fees 0.0006,
 slippage 0.0003, cash 10 000).
+Hardening ifvg: `strict_min_confluence=4` en TFs estrictos (1h/4h) + runner
+`rr_runner=3.0` / `weight_tp1=0.9` en esas celdas (default 2 en el resto).
 
 ## Veredicto por estrategia
 
 | Estrategia | Veredicto | Media ret % | Celdas rentables | Celdas | Señales |
 |---|---|---|---|---|---|
-| demon2:power_flow | **PROFITABLE** | +107.88 | 6 | 8 | 18 079 |
-| fvg_mtf:ifvg | **PROFITABLE** | **+41.50** | 6 | 8 | 978 |
-| fib_retrace | UNPROFITABLE | −57.19 | 0 | 8 | 2 513 |
+| fvg_mtf:ifvg | **PROFITABLE** | **+69.73** | **7** | 8 | 563 |
+| fvg_mtf:fvg | UNPROFITABLE | −24.01 | 3 | 8 | 2 128 |
+| demon2:power_flow | UNPROFITABLE | −46.99 | 0 | 8 | 18 079 |
+| fib_retrace | UNPROFITABLE | −53.94 | 0 | 8 | 2 718 |
 | demon2:po3 | UNPROFITABLE | −57.42 | 1 | 8 | 2 118 |
-| fvg_mtf:fvg | UNPROFITABLE | −53.64 | 0 | 8 | 3 508 |
 | ictsuite:sfp | UNPROFITABLE | −58.32 | 0 | 8 | 5 586 |
 | demon2:mmxm (breaker ON) | SIN SEÑALES | — | — | 8 | 0 |
 | ictsuite:scalp_sweep | SIN SEÑALES | — | — | 8 | 0 |
 | ictsuite:intraday_quantum | SIN SEÑALES | — | — | 8 | 0 |
 | ictsuite:macro_swing | SIN SEÑALES | — | — | 8 | 0 |
 
-## Detalle fvg_mtf:ifvg por celda (1 año)
+## Detalle fvg_mtf:ifvg por celda (1 año, hardening activo)
 
-| Celda | Ret % | n | WinRate leg A |
-|---|---|---|---|
-| BTC 1h | −103.2 | 230 | 35.0 |
-| BTC 2h | +66.1 | 200 | 44.1 |
-| BTC 4h | **+279.7** | 105 | 42.1 |
-| BTC 1d | +63.3 | 19 | 36.4 |
-| ETH 1h | −3.7 | 159 | 35.3 |
-| ETH 2h | +12.6 | 153 | 42.2 |
-| ETH 4h | +10.4 | 91 | 43.5 |
-| ETH 1d | +6.8 | 21 | 49.4 |
+| Celda | Ret % | n | Leg A ret % | Leg B ret % | WinRate leg A % |
+|---|---|---|---|---|---|
+| BTC 1h | **+14.0** | 43 | +23.4 | −23.3 | 57.7 |
+| BTC 2h | +66.1 | 200 | +68.7 | +55.6 | 44.1 |
+| BTC 4h | **+387.6** | 46 | +510.1 | −102.4 | 51.5 |
+| BTC 1d | +63.3 | 19 | +76.9 | +9.1 | 36.4 |
+| ETH 1h | −2.3 | 42 | −2.5 | −1.5 | 37.1 |
+| ETH 2h | +12.6 | 153 | +15.2 | +1.8 | 42.2 |
+| ETH 4h | +9.7 | 39 | +12.3 | −0.8 | 52.0 |
+| ETH 1d | +6.8 | 21 | +9.5 | −4.1 | 60.0 |
 
-Nota: en BTC 4h el leg runner (1:5) es −101% — el resultado lo carga el leg A;
-validar con gestión alternativa del runner.
+## Evolución del hardening (mapa completo, misma data)
+
+| Run | Configuración | Media ret % | Celdas rentables | BTC 1h | BTC 4h |
+|---|---|---|---|---|---|
+| 092636 | sin strict (freq=None → mc=2) | +42.26 | 6/8 | −103.3 | +287.3 |
+| 093120 | strict mc=3 (inferencia de TF corregida) | +50.47 | 6/8 | −70.9 | +318.2 |
+| **093533** | **strict mc=4 (final)** | **+69.73** | **7/8** | **+14.0** | **+387.6** |
 
 ## Lectura
 
-- **Rentables:** `power_flow` (+107.88%, bias-only, sl=NaN → sin stop; refleja
-  seguimiento M>W>D, validar con SL explícito) y **`fvg_mtf:ifvg` (+41.50%,
-  la nueva estrategia MTF: inversión de gap 30m con bias 4h)**. ifvg gana sobre
-  todo en BTC 2h/4h/1d y ETH todas las TFs; la única celda rota es BTC 1h.
+- **Única familia rentable: `fvg_mtf:ifvg` (+69.73%, 7/8 celdas)**. El
+  endurecimiento quirúrgico (min_confluence 4 en 1h/4h + runner 3.0/0.9) curó la
+  celda rota BTC 1h (−103 → +14) y elevó BTC 4h a +387.6. La 2h/1d no son
+  estrictas (mc=2) e intactas (BTC 2h +66, ETH 2h +12.6).
+- La única celda negativa es ETH 1h (−2.3, n=42) — marginal; se acepta o se
+  excluye del lote de producción sin coste material.
+- **`power_flow` refutado como edge:** +107.88% previo era exposición pasiva sin
+  SL (bias-only). Con SL ATR explícito cae a −46.99 → descartado.
+- **fib_retrace con TPs nativos 1.17/1.27 + invalidation v2:** sigue sin
+  rentabilidad (−53.94) → revisión de SL/invalidation o descarte.
+- fvg (pullback) mejora con el strict (−42 → −24) pero sigue sin edge: la inversión
+  es lo que aporta, no la continuación.
+- po3/sfp pierden homogéneamente; mmxm, scalp_sweep, intraday_quantum y
+  macro_swing siguen sin generar señales en TFs ≥1h.
 
-- **fvg_mtf:fvg (continuación)** pierde en 8/8 → no es el pullback, es la
-  inversión lo que tiene edge bajo este esquema de exits.
-
-- **fib_retrace:** 2 513 señales; pierde en las 8 celdas. El S de invalidación
-  −0.17/−0.27 medido desde el swing deja riesgo ~0.77R vs TP 1:2 que rara vez
-  alcanza → **descartar defaults** o revisar SL / imponer los TPs 1.17/1.27 reales.
-
-- **po3 / sfp:** pierden homogéneamente → flag de descarte salvo revisión.
-
-- **mmxm incluso con breaker ON; scalp_sweep / intraday_quantum / macro_swing:**
-  0 señales → necesitan menor TF (3m/5m) o relajar umbrales.
-
-- CSVs por celda: `reports/profit_map_20260902_091415.csv` y
-  `reports/verdict_20260902_091415.csv`.
+- CSVs por celda: `reports/profit_map_20260902_093533.csv` y
+  `reports/verdict_20260902_093533.csv` (trazabilidad completa en 092636/093120).

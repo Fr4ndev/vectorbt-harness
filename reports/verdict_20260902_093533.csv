@@ -1,0 +1,11 @@
+family,strategy,verdict,mean_return_pct,prof_cells,total_cells,total_signals
+fib_retrace,default,UNPROFITABLE,-53.94,0,8,2718
+demon2,mmxm,UNPROFITABLE,0.0,0,8,0
+demon2,po3,UNPROFITABLE,-57.42,1,8,2118
+demon2,power_flow,UNPROFITABLE,-46.99,0,8,18079
+fvg_mtf,ifvg,PROFITABLE,69.73,7,8,563
+fvg_mtf,fvg,UNPROFITABLE,-24.01,3,8,2128
+ictsuite,scalp_sweep,UNPROFITABLE,0.0,0,8,0
+ictsuite,intraday_quantum,UNPROFITABLE,0.0,0,8,0
+ictsuite,macro_swing,UNPROFITABLE,0.0,0,8,0
+ictsuite,sfp,UNPROFITABLE,-58.32,0,8,5586

@@ -169,7 +169,8 @@ def _resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 def power_flow(df: pd.DataFrame, df_m: pd.DataFrame | None = None,
                df_w: pd.DataFrame | None = None,
-               df_d: pd.DataFrame | None = None) -> dict:
+               df_d: pd.DataFrame | None = None,
+               atr_sl_mult: float = 1.5) -> dict:
     df_d = df_d if df_d is not None else _resample(df, "D")
     df_w = df_w if df_w is not None else _resample(df, "W")
     df_m = df_m if df_m is not None else _resample(df, "M")
@@ -202,8 +203,11 @@ def power_flow(df: pd.DataFrame, df_m: pd.DataFrame | None = None,
     direction = dir_d.reindex(df.index, method="ffill").fillna(0).astype(int)
     entries = (direction == 1)
     shorts = (direction == -1)
+    # explicit ATR stop on the operative frame (no more stopless positions)
+    atr_ = ic.atr(df["high"], df["low"], df["close"], period=14)
     sl = pd.Series(np.nan, index=df.index)
-    # bias-only: no SL (levels come from the daily close)
+    sl[entries] = df["close"][entries] - atr_[entries] * atr_sl_mult
+    sl[shorts] = df["close"][shorts] + atr_[shorts] * atr_sl_mult
     return _collect(entries, shorts, sl, direction, {"confluences": conf},
                     name="demon2_power_flow")
 

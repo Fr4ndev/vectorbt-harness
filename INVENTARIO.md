@@ -58,10 +58,12 @@ TF: 1h (bias HTF 4h via z-score Valeyre).
 - SL: `entry ∓ (high−low)_actual × 0.3` (el `atr_d` es el rango de la vela actual).
 - Fuente original RR 1:5. Confluencias: 4.
 
-### power_flow — Jerarquía M>W>D (bias-only, sin SL/TP)
+### power_flow — Jerarquía M>W>D (bias + SL ATR)
 - Sweep bull: `low < prev_low AND close > prev_low`; sweep bear: `high > prev_high AND close < prev_high`.
 - Prioridad: monthly (conf 5) → weekly (conf 4) → daily (conf 3).
-- Devuelve dirección (bias) rehecha (ffill) al índice de la vela de entrada; **no tradable por sí solo**.
+- Devuelve dirección (bias) rehecha (ffill) al índice de la vela de entrada, con
+  `atr_sl_mult=1.5` (SL ATR explícito). **Refutado por el profit map**: con SL
+  pasa a −46.99 (el +107.88% inicial era exposición pasiva sin stop).
 
 ### weekly_bias — Extensión weekly (Tue/Wed UTC, sólo LONG)
 - Gate: día = martes o miércoles UTC.
@@ -243,6 +245,11 @@ Sweep BTC+ETH × 1h/2h/4h/1d (1 año) de las familias del alcance del usuario:
 Emite `reports/profit_map_<ts>.csv` (por celda) y `reports/verdict_<ts>.csv`
 (veredicto por estrategia: PROFITABLE/UNPROFITABLE según mean_return_pct > 0,
 ratio de celdas rentables ≥ 50% y total de señales).
+
+Veredicto 2026-09-02 (hardening activo): **fvg_mtf:ifvg PROFITABLE +69.73%**
+(7/8 celdas); resto UNPROFITABLE (fib_retrace −53.94, power_flow −46.99 con SL,
+fvg −24.01, po3 −57.42, sfp −58.32) o SIN SEÑALES (mmxm, scalp_sweep,
+intraday_quantum, macro_swing). Detalle en `reports/INFORME_PROFIT_MAP.md`.
 
 ```
 ~/Escritorio/ccxtv2/venv/bin/python run_profit_map.py

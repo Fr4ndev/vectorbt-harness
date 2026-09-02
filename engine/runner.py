@@ -58,14 +58,27 @@ def run_one(
     shorts = sig["short_entries"]
     sl = sig["sl"]
 
-    # Build the exit scheme per user spec: entry + sl -> brackets
+    # Build the exit scheme per user spec: entry + sl -> brackets.
+    # Strategy-native TP levels (sig["tp1"]/["tp2"]) take precedence over the
+    # generic 1:2 / 1:5 derivation (e.g. fib_retrace wires Natives).
     direction = sig["dir"]
-    brackets = exits.build_brackets(
-        entry=close, sl=sl, direction=direction,
-        rr_tp1=exit_kwargs.get("rr_tp1", cfg.EXIT_DEFAULTS["rr_tp1"]),
-        rr_runner=exit_kwargs.get("rr_runner", cfg.EXIT_DEFAULTS["rr_runner"]),
-        weight_tp1=exit_kwargs.get("weight_tp1", cfg.EXIT_DEFAULTS["weight_tp1"]),
-    )
+    if sig.get("tp1") is not None or sig.get("tp2") is not None:
+        brackets = exits.build_native_brackets(
+            entry=close, sl=sl,
+            tp1=sig.get("tp1", pd.Series(np.nan, index=df.index)),
+            tp2=sig.get("tp2", pd.Series(np.nan, index=df.index)),
+            direction=direction,
+            weight_tp1=exit_kwargs.get(
+                "weight_tp1", sig.get("weight_tp1", cfg.EXIT_DEFAULTS["weight_tp1"])
+            ),
+        )
+    else:
+        brackets = exits.build_brackets(
+            entry=close, sl=sl, direction=direction,
+            rr_tp1=exit_kwargs.get("rr_tp1", cfg.EXIT_DEFAULTS["rr_tp1"]),
+            rr_runner=exit_kwargs.get("rr_runner", cfg.EXIT_DEFAULTS["rr_runner"]),
+            weight_tp1=exit_kwargs.get("weight_tp1", cfg.EXIT_DEFAULTS["weight_tp1"]),
+        )
 
     f = dict(cfg.EXIT_DEFAULTS)
     f.update(exit_kwargs)
