@@ -19,7 +19,7 @@ import ccxt
 START = "2019-01-01"
 END = None  # now
 SYMBOLS = ["BTC", "ETH"]
-TIMEFRAMES = ["1h", "2h", "4h"]
+TIMEFRAMES = ["1h", "2h", "4h", "30m"]
 CEX_SYMBOL = "BTC/USDT:USDT"  # perp; loader uses bare symbol but we pass full here
 
 CACHE = "data/cache/hist"

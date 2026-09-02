@@ -726,3 +726,47 @@ curve-fitting:
   ETH+4h y gestión de drawdown severo (BTC llega a DD 100%+ en varias ventanas).
 - Pipeline reusable: `download_history.py` + `run_hvfvg_walkforward.py`.
   Artefacto heredado de sizing en split sin tocar.
+
+## 2026-09-02 — HVFVG → IFVG 30m EVOLUTION (7y walk-forward, macro 4h/2h gate)
+
+Evolución del módulo: nuevo `signals/hvfvg/hvfvg_ifvg.py` = **Inversion FVG + filtro
+HTF (4h/2h bias → 30m execution)** para sustituir entradas límite por confirmación
+de cambio de estructura:
+- Fallado/mitigado: FVG alcista atravesado por `close < fvg_low` → **Bearish IFVG**
+  (soporte→resistencia); FVG bajista superado por `close > fvg_high` → **Bullish
+  IFVG** (resistencia→soporte). Gatillo en el retest de la zona invertida.
+- Bias macro desde resample 30m→4h/2h (live-FVG presence, causal, `require_htf`).
+- Optimizado vs hvfvg.py: swing pivots precomputados una vez (evita O(n²)).
+
+Datos nuevos descargados: **30m 7 años** (Binance, 122k BTC / 118k ETH velas,
+2019-2026; `download_history.py` + `data/cache/hist/*_30m_hist.csv`).
+
+### Gestión All-In sobre 6 ventanas (2019-2026), params FIXED sin re-tune
+| celda/score | All-In 1:2 | All-In 1:2.5 |
+|---|---|---|
+| BTC (30m IFVG) | PF 0.984, 1126 trades | PF 1.054, 1071 trades |
+| ETH (30m IFVG) | PF 0.981, 1517 trades | PF 0.985, 1435 trades |
+| **SISTEMA IFVG 30m** | **0.982**, 2643 trades | **1.014**, 2506 trades |
+| **FVG baseline (2h/4h)** | 1.058, 1714 trades | 1.041 |
+
+### Lectura (muestra estadísticamente sólida: 2643 trades IFVG vs 1714 baseline)
+- **La evolución a IFVG 30m NO mejora el edge sobre la baseline FVG.** A 1:2
+  empeora (0.982 vs 1.058); a 1:2.5 es equivalente (1.014 vs 1.041). Sigue todo
+  ~1.0 de PF; ninguna variante pasa de 1.15.
+- **El sesgo macro (4h/2h) aplicado a ejecución 30m NO rescata el sistema**: la
+  robustez vista antes en 4h/2h (BTC 4h 1.22 / ETH 4h 1.49) **no se transfiere a
+  30m** — BTC/ETH 30m quedan ~1.0.
+- **Conclusión estructural**: el edge era un fenómeno de la temporalidad alta
+  (4h), no una propiedad estructural del setup que se pueda extraer a 30m. La
+  señal 30m añade ruido a pesar del filtro macro y la confirmación IFVG.
+- Drawdowns BTC siguen severos (>100% en W2/W5); ETH contenido (<20%) pero
+  breakeven.
+
+### Decisión
+- **NO se promueve IFVG 30m a deploy** (PF ~1.0 con gran muestra). El módulo
+  `hvfvg_ifvg.py` queda como implementación evaluada, no activa.
+- El sistema HVFVG/IFVG, evaluado con rigor en 7 años, **no tiene un edge
+  robusto >1.15 ni en FVG 2h/4h ni en IFVG 30m**. El único resultado
+  consistentemente >1 es ETH/BTC 4h (1.22-1.49) en FVG clásico, pero con alta
+  dependencia de régimen.
+- Artefacto heredado de sizing en split sin tocar.
