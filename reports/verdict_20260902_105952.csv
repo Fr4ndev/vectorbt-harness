@@ -1,0 +1,9 @@
+family,strategy,verdict,mean_return_pct,prof_cells,total_cells,total_signals
+demon2,mmxm,PROFITABLE,38.97,5,8,382
+demon2,po3_fractal,UNPROFITABLE,-2.03,3,8,38
+fvg_mtf,ifvg,PROFITABLE,79.81,7,8,560
+fvg_mtf,fvg,UNPROFITABLE,-16.81,3,8,2122
+ictsuite,scalp_sweep,UNPROFITABLE,0.0,0,8,0
+ictsuite,intraday_quantum,UNPROFITABLE,0.0,0,8,0
+ictsuite,macro_swing,UNPROFITABLE,0.0,0,8,0
+ictsuite,sfp_institutional,UNPROFITABLE,-1.34,2,8,32

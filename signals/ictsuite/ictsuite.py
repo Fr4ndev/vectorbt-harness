@@ -188,7 +188,7 @@ def macro_swing(df, z_period: int = 50, z_threshold: float = 1.5,
 # ---------------------------------------------------------------------------
 def sfp_institutional(df, depth_min: float = 0.0015, depth_max: float = 0.0050,
                       rejection_min: float = 50.0, killzones: bool = True,
-                      reclaim_bars: int = 2) -> dict:
+                      reclaim_bars: int = 1) -> dict:
     """Absorption SFP: sweep a real swing low/high by 0.15-0.50% only.
 
     Depth filter (the 0.15-0.50% zone) discards both shallow continuation
