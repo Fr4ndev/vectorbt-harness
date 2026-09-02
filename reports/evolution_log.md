@@ -678,3 +678,51 @@ OOS** → se descarta para HVFVG. Aún así, como el sistema completo OOS es ~br
 y solo 2h/ETH es robusto, **NO se promueve HVFVG a deploy en vivo**; quedan
 registrados los datos para post-procesar el arnés (descartar 1h) si se decide
 seguir. Artefacto heredado de sizing en split sin tocar.
+
+## 2026-09-02 — HVFVG 7-YEAR WALK-FORWARD (rolling, 6 windows, regime-based)
+
+El OOS 30% previo (n=7-19) era ruido. Se amplía el histórico a **5-7 años
+(2019-09 → 2026-09)** descargado de **Binance** (ccxt, `download_history.py`,
+cache `data/cache/hist/`; Hyperliquid solo lista desde ~2023 → no sirve para
+esto). 6 ventanas contiguas OOS, parámetros FIXED (sin re-tune) para evitar
+curve-fitting:
+
+- W1 19Q3-20Q4 Bull temprano(COVID) · W2 21Q1-22Q1 Bull tardío+crash · W3 22Q2-23Q3
+  Bear(FTX/bottom) · W4 23Q4-24Q5 Range(ETF) · W5 24Q6-25Q7 Bull(ETF) · W6 25Q8-26Q9 Mixto.
+
+### Resumen acumulado (7 años, todas las ventanas)
+| celda | 1:2 PF | 1:2.5 PF | trades(1:2) | worstDD |
+|---|---|---|---|---|
+| BTC 1h | 0.97 | 0.94 | 376 | 17.5% |
+| BTC 2h | 0.81 | 0.88 | 259 | 40.0% |
+| BTC 4h | **1.22** | **1.17** | 152 | 18.8% |
+| ETH 1h | 1.09 | 1.06 | 549 | 2.1% |
+| ETH 2h | 1.08 | 1.09 | 261 | 1.2% |
+| ETH 4h | **1.49** | **1.35** | 117 | 0.7% |
+| **SISTEMA** | **1.058** | **1.041** | 1714 | — |
+
+**Overall trade-weighted**: All-In 1:2 → PF **1.058** (WR 39.7%), 1:2.5 → **1.041**
+(WR 36.8%), sobre **1714 trades** (n+ mucho mayor que la meta 150-200/celda en
+1h/2h; 4h queda ~117-152 por baja señal).
+
+### Lectura clara (7 años, no ruido)
+1. **El edge NO se sostiene >1.15 a través de los años.** El sistema es *marginal*
+   (~1.05 PF): si es real, es muy débil; no es el "rebote mecánico limpio" que
+   buscábamos.
+2. **El problema NO es (solo) el 1h.** El OOS 30% anterior era engañoso: en 7
+   años, 1h sobrevive ~breakeven (BTC 0.97 / ETH 1.09), y ETH 1h es incluso
+   positivo. El peor celda es **BTC 2h (0.81)**.
+3. **El edge es dependiente de activo y régimen**: **ETH robusto (1.08-1.49),
+   BTC débil** (solo 4h >1.0). Y no es estable entre regímenes (p.ej. BTC 4h fuerte
+   W1/W3 pero 0.57-0.25 en W4/W6; ETH 4h fuerte W1/W3/W6, débil W5).
+4. **R:R**: 1:2 y 1:2.5 equivalentes a nivel sistema (1.058 vs 1.041); 1:2 gana
+   por PF y WR apenas. **Ninguno es robusto >1.15.**
+
+### Decisión
+- Los defaults de señal y exits All-In quedan **como experimento evaluado, NO se
+  promueven a deploy en vivo** (PF ~1.05 no justifica capital en producción).
+- El edge del rebote 1:2 existe como fenómeno ETH (esp. ETH 4h PF 1.49) y BTC 4h,
+  pero es marginal e irregular por régimen. Cualquier uso real exigiría sesgo a
+  ETH+4h y gestión de drawdown severo (BTC llega a DD 100%+ en varias ventanas).
+- Pipeline reusable: `download_history.py` + `run_hvfvg_walkforward.py`.
+  Artefacto heredado de sizing en split sin tocar.
