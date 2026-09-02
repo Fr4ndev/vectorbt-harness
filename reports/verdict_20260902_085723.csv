@@ -1,0 +1,9 @@
+family,strategy,verdict,mean_return_pct,prof_cells,total_cells,total_signals
+fib_retrace,default,NO_DATA,0,0,0,0
+demon2,mmxm,NO_DATA,0,0,0,0
+demon2,po3,NO_DATA,0,0,0,0
+demon2,power_flow,NO_DATA,0,0,0,0
+ictsuite,scalp_sweep,NO_DATA,0,0,0,0
+ictsuite,intraday_quantum,NO_DATA,0,0,0,0
+ictsuite,macro_swing,NO_DATA,0,0,0,0
+ictsuite,sfp,NO_DATA,0,0,0,0
