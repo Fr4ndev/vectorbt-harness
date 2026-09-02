@@ -13,17 +13,18 @@ Pipeline (all causal / no lookahead):
            volume[i-1] > volume.rolling(lookback).mean()[i-1] * vol_mult
            (defaults: lookback=50, vol_mult=1.8)
     3. Retest + institutional defense validation per live HV-FVG:
-           - price retests (touches) the gap zone without a close through it
-             (i.e. the FVG is not mitigated)
-           - absorption: a retest candle with volume > rolling_mean(20) * 1.5
-             AND body ratio abs(close-open)/(high-low+eps) < 0.4
-           - rejection: a subsequent close outside the zone in the direction
-             of the original impulse (long: close > gap_high; short: close <
-             gap_low)
+            - price retests (touches) the gap zone without a close through it
+              (i.e. the FVG is not mitigated)
+            - absorption: a retest candle with volume > rolling_mean(20) * 1.5
+              AND body ratio abs(close-open)/(high-low+eps) < 0.4
+            - rejection: a subsequent close outside the zone in the direction
+              of the original impulse (long: close > gap_high; short: close <
+              gap_low)
+            - retest_max bounds the defense window (default 96)
     4. Levels:
-           Entry : deep inside the FVG (fvg_low + entry_ratio*height long /
-                   fvg_high - entry_ratio*height short), entry_ratio=0.15
-           SL    : FVG extreme +/- ATR(14) * atr_sl_mult (default 0.25)
+           Entry : CE (fvg_low + entry_ratio*height long /
+                   fvg_high - entry_ratio*height short), entry_ratio=0.5
+           SL    : FVG extreme +/- ATR(14) * atr_sl_mult (default 0.8)
            TP    : nearest ERL swing point beyond the impulse extreme, or
                    fallback entry +/- ATR(14) * tp_atr_mult
     The signal fires on the rejection bar; entries/SL/TP are shifted 1 bar so
@@ -130,13 +131,14 @@ def compute(df: pd.DataFrame, **params) -> dict:
 
     lookback = int(params.get("lookback", 50))          # volume anomaly window
     vol_mult = float(params.get("vol_mult", 1.8))       # displacement volume
-    atr_sl_mult = float(params.get("atr_sl_mult", 0.25))  # SL buffer (ATR)
+    atr_sl_mult = float(params.get("atr_sl_mult", 0.8))  # SL buffer (ATR)
     tp_atr_mult = float(params.get("tp_atr_mult", 2.0))   # fallback TP (ATR)
-    entry_ratio = float(params.get("entry_ratio", 0.15))
+    entry_ratio = float(params.get("entry_ratio", 0.5))
     abs_vol_mult = float(params.get("abs_vol_mult", 1.5))  # absorption volume
     abs_body_max = float(params.get("abs_body_max", 0.4))  # absorption body
-    retest_max = int(params.get("retest_max", 12))         # defense window
+    retest_max = int(params.get("retest_max", 96))         # defense window
     swing_window = int(params.get("swing_window", 5))      # ERL swing fractal
+    use_absorption = bool(params.get("use_absorption_filter", True))
 
     atr_ = ic.atr(high, low, close, period=14)
 
@@ -205,9 +207,11 @@ def compute(df: pd.DataFrame, **params) -> dict:
                 continue
             # (once absorbed, keep scanning for a rejection close)
             if not absorbed:
-                vol_ok_abs = (not np.isnan(c_vs20[t])) and c_vol[t] > c_vs20[t] * abs_vol_mult
-                body_ok = (not np.isnan(c_body[t])) and c_body[t] < abs_body_max
-                if vol_ok_abs and body_ok:
+                if use_absorption:
+                    vol_ok_abs = (not np.isnan(c_vs20[t])) and c_vol[t] > c_vs20[t] * abs_vol_mult
+                    body_ok = (not np.isnan(c_body[t])) and c_body[t] < abs_body_max
+                    absorbed = vol_ok_abs and body_ok
+                else:
                     absorbed = True
             # rejection close in favor of the move
             if absorbed:

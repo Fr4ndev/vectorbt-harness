@@ -536,3 +536,65 @@ Se deja dokumentado como candidato a tuning (niveles entry/SL, ventana defensa).
 
 **Artefacto documentado (sin tocar)**: `_combined_return`/split puede dar Total
 Return < -100% (colapso de sizing con overlap); no abordado en este turno.
+
+## 2026-09-02 — HVFVG PARAMETER TUNING (grid search, IS 70%)
+
+Objetivo: corregir sobre-filtrado (n bajo) y SL prematuros por ruido en el port
+hvfvg (commit 2d944bc). Barrido en el tramo **In-Sample (70% temporal)** de cada
+serie, selección por Profit Factor / Win Rate / n.
+
+### Espacio de búsqueda (108 configs x 6 celdas intraday = 648 runs)
+`vol_mult [1.3,1.5,1.8]`, `entry_ratio [0.0,0.5]`, `atr_sl_mult [0.5,0.8,1.2]`,
+`retest_max [24,48,96]`, `use_absorption_filter [True,False]`.
+
+### Criterio de selección (IS)
+min n>=40 trades/celda, Win Rate > 45%, maximizar Profit Factor. Resultado:
+**ninguna** config alcanza PF medio > 1.0 en IS (cota superior 0.95). Los top-10
+configs son todos `vol_mult=1.8`, `use_absorption=True`, `atr_sl_mult>=0.8`,
+`retest_max>=96` → relajar `vol_mult` a 1.3/1.5 NO aporta señales válidas extra
+(solo ruido); el filtro de volumen estricto se mantiene.
+
+### Ganador (aplicado como defaults nuevos)
+`vol_mult=1.8, entry_ratio=0.5, atr_sl_mult=0.8, retest_max=96,
+use_absorption_filter=True`
+- avg PF = 0.95 (IS), avg WR = 45.5%, avg ret = +10.45% (IS)
+- Detalle por celda (IS):
+  | celda | n | trades | WR% | PF | ret% |
+  |---|---|---|---|---|---|
+  | BTC 1h | 40 | 73 | 46.6 | 0.88 | -10.0 |
+  | BTC 2h | 45 | 81 | 44.4 | 1.06 | +52.9 |
+  | BTC 4h | 14 | 27 | 59.3 | 2.11 | +156.9 |
+  | ETH 1h | 64 | 123 | 45.5 | 0.76 | -3.8 |
+  | ETH 2h | 39 | 75 | 45.3 | 1.10 | +2.7 |
+  | ETH 4h | 20 | 36 | 35.4 | 0.98 | +0.5 |
+
+### Verificación OOS / full walk-forward (70/30 split, fees 0.00045, caja 10k)
+rel vs pre-tune (commit 2d944bc) — el tuning **triplica la muestra** y endereza
+la pierna A:
+
+| celda | n pre→post | legA ret pre→post | legB ret |
+|---|---|---|---|
+| BTC 1h | 30→61 | -22.4→**-43.2** | -9.8 |
+| BTC 2h | 25→55 | -22.3→**+87.3** | -57.5 |
+| BTC 4h | 14→21 | +6.6→**+142.7** | -8.1 |
+| ETH 1h | 36→80 | -0.4→**-4.1** | -1.7 |
+| ETH 2h | 29→57 | +3.2→**+4.5** | -0.6 |
+| ETH 4h | 21→30 | -5.1→**+4.0** | -4.2 |
+
+**Lectura**: tras el tuning la pierna A (80%, tp1 1:2 con SL original) es
+**positiva o breakeven en 7/8 celdas intraday** (BTC 1h / ETH 1h quedan planas/
+negativas), con win rates 53-75%. El **cuello de botella restante es la pierna B
+(runner 20% a 1:5, SL a BE): negativa en todas las celdas** (WR 20-33%) — no es un
+problema de parámetros de señal sino del exit scheme runner para este tipo de
+setup. `1d` sigue sin señales estructurales.
+
+### Decisión
+- **Defaults actualizados** a la config ganadora (entry CE 0.5, SL 0.8xATR,
+  retest_max 96).
+- **NO promocionado a deploy** en vivo: PF medio IS < 1.0 y pierna B negativa en
+  todas las celdas lo descartan para producción hasta resolver el exit leg B.
+- Siguiente candidato de tuning (documentado, no ejecutado): revisar el runner
+  leg B (rr_tp2 / SL-a-BE / trailing) específico de HVFVG, o `tp_atr_mult`.
+
+**Artefacto (heredado, sin tocar)**: colapso de sizing con overlap en split
+(total return < -100%) no abordado.
